@@ -77,7 +77,7 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 				MarkdownDescription: "Active Cluster Name",
 				Optional:            true,
 			},
-			"Clusters": schema.StringAttribute{
+			"Clusters": schema.ListAttribute{
 				MarkdownDescription: "Temporal Clusters",
 				Optional:            true,
 			},
@@ -89,15 +89,15 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 				MarkdownDescription: "Visibility Archival State",
 				Optional:            true,
 			},
-			"IsGlobalNamespace": schema.StringAttribute{
+			"IsGlobalNamespace": schema.BoolAttribute{
 				MarkdownDescription: "Namespace is Global",
 				Optional:            true,
 			},
-			"FailoverVersion": schema.StringAttribute{
+			"FailoverVersion": schema.Int64Attribute{
 				MarkdownDescription: "Failover Version",
 				Optional:            true,
 			},
-			"FailoverHistory": schema.StringAttribute{
+			"FailoverHistory": schema.ListAttribute{
 				MarkdownDescription: "Failover History",
 				Optional:            true,
 			},

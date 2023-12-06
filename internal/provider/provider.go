@@ -13,8 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	operatorservice "go.temporal.io/api/operatorservice/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	grpcMetadata "google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 var _ provider.Provider = &TemporalProvider{}
@@ -152,11 +151,12 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	}
 
 	// Create a new Temporal client using the configuration values
-	jwtCreds := strings.Join([]string{"Bearer", token}, " ")
+	// jwtCreds := strings.Join([]string{"Bearer", token}, " ")
 	endpoint := strings.Join([]string{host, port}, ":")
-	connection, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")), grpcMetadata.New(map[string]string{"authorization": jwtCreds}))
+	connection, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	// connection, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")), grpcMetadata.New(map[string]string{"authorization": jwtCreds}))
 
-	client, err := operatorservice.NewOperatorServiceClient(connection)
+	client := operatorservice.NewOperatorServiceClient(connection)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",

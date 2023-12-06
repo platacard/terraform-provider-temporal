@@ -2,37 +2,45 @@ package provider
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc"
 )
 
 // Ensure provider defined types fully satisfy framework interfaces.
-var _ datasource.DataSource = &NamespaceDataSource{}
+var (
+	_ datasource.DataSource              = &NamespaceDataSource{}
+	_ datasource.DataSourceWithConfigure = &NamespaceDataSource{}
+)
 
 func NewNamespaceDataSource() datasource.DataSource {
 	return &NamespaceDataSource{}
 }
 
 // NamespaceDataSource defines the data source implementation.
-type NamespaceDataSource struct{}
+type NamespaceDataSource struct {
+	client workflowservice.WorkflowServiceClient
+}
 
 // NamespaceDataSourceModel describes the data source data model.
 type NamespaceDataSourceModel struct {
-	Name                    types.String `tfsdk:"name"`
-	Id                      types.String `tfsdk:"id"`
-	Description             types.String `tfsdk:"description"`
-	OwnerEmail              types.String `tfsdk:"owner_email"`
-	State                   types.String `tfsdk:"state"`
-	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
-	Clusters                types.List   `tfsdk:"clusters"`
-	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
-	VisibilityArchivalState types.String `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       types.String `tfsdk:"is_global_namespace"`
-	FailoverVersion         types.Number `tfsdk:"failover_version"`
-	FailoverHistory         types.List   `tfsdk:"failover_history"`
+	Name                    types.String   `tfsdk:"name"`
+	Id                      types.String   `tfsdk:"id"`
+	Description             types.String   `tfsdk:"description"`
+	OwnerEmail              types.String   `tfsdk:"owner_email"`
+	State                   types.String   `tfsdk:"state"`
+	ActiveClusterName       types.String   `tfsdk:"active_cluster_name"`
+	Clusters                []types.String `tfsdk:"clusters"`
+	HistoryArchivalState    types.String   `tfsdk:"history_archival_state"`
+	VisibilityArchivalState types.String   `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       types.Bool     `tfsdk:"is_global_namespace"`
+	FailoverVersion         types.Int64    `tfsdk:"failover_version"`
+	FailoverHistory         []types.String `tfsdk:"failover_history"`
 }
 
 func (d *NamespaceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -102,10 +110,29 @@ func (d *NamespaceDataSource) Configure(ctx context.Context, req datasource.Conf
 	if req.ProviderData == nil {
 		return
 	}
+
+	connection, ok := req.ProviderData.(grpc.ClientConnInterface)
+	if !ok {
+		resp.Diagnostics.AddError(
+			"Unexpected Data Source Configure Type",
+			fmt.Sprintf("Expected grpc.ClientConnInterface), got: %T. Please report this issue to the provider developers.", req.ProviderData),
+		)
+
+		return
+	}
+
+	client := workflowservice.NewWorkflowServiceClient(connection)
+
+	d.client = client
 }
 
 func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	var data NamespaceDataSourceModel
+
+	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	// Read Terraform configuration data into the model
 	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
@@ -114,17 +141,33 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := d.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
-	//     return
-	// }
+	ns, err := d.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+		Id:        data.Id.String(),
+	})
+	data = NamespaceDataSourceModel{
+		Name:                    types.StringValue(ns.NamespaceInfo.Name),
+		Id:                      types.StringValue(ns.NamespaceInfo.Id),
+		Description:             types.StringValue(ns.NamespaceInfo.Description),
+		OwnerEmail:              types.StringValue(ns.NamespaceInfo.OwnerEmail),
+		State:                   types.StringValue(ns.NamespaceInfo.State.String()),
+		ActiveClusterName:       types.StringValue(ns.ReplicationConfig.ActiveClusterName),
+		HistoryArchivalState:    types.StringValue(ns.Config.HistoryArchivalState.String()),
+		VisibilityArchivalState: types.StringValue(ns.Config.VisibilityArchivalState.String()),
+		IsGlobalNamespace:       types.BoolValue(ns.IsGlobalNamespace),
+		FailoverVersion:         types.Int64Value(ns.FailoverVersion),
+	}
 
-	// For the purposes of this Namespace code, hardcoding a response value to
-	// save into the Terraform state.
-	data.Id = types.StringValue("Namespace-id")
+	for _, clusters := range ns.ReplicationConfig.Clusters {
+		data.Clusters = append(data.Clusters, types.StringValue(clusters.ClusterName))
+	}
+	for _, failover := range ns.FailoverHistory {
+		data.Clusters = append(data.Clusters, types.StringValue(failover.String()))
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
+		return
+	}
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log

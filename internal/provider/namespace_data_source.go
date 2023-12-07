@@ -3,12 +3,20 @@ package provider
 import (
 	"context"
 	"fmt"
+	"regexp"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/boolvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/numbervalidator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/path"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	workflowservice "go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 )
 
@@ -29,18 +37,18 @@ type NamespaceDataSource struct {
 
 // NamespaceDataSourceModel describes the data source data model.
 type NamespaceDataSourceModel struct {
-	Name                    types.String   `tfsdk:"name"`
-	Id                      types.String   `tfsdk:"id"`
-	Description             types.String   `tfsdk:"description"`
-	OwnerEmail              types.String   `tfsdk:"owner_email"`
-	State                   types.String   `tfsdk:"state"`
-	ActiveClusterName       types.String   `tfsdk:"active_cluster_name"`
-	Clusters                []types.String `tfsdk:"clusters"`
-	HistoryArchivalState    types.String   `tfsdk:"history_archival_state"`
-	VisibilityArchivalState types.String   `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       types.Bool     `tfsdk:"is_global_namespace"`
-	FailoverVersion         types.Int64    `tfsdk:"failover_version"`
-	FailoverHistory         []types.String `tfsdk:"failover_history"`
+	Name                    string   `tfsdk:"name"`
+	Id                      string   `tfsdk:"id"`
+	Description             string   `tfsdk:"description"`
+	OwnerEmail              string   `tfsdk:"owner_email"`
+	State                   string   `tfsdk:"state"`
+	ActiveClusterName       string   `tfsdk:"active_cluster_name"`
+	Clusters                []string `tfsdk:"clusters"`
+	HistoryArchivalState    string   `tfsdk:"history_archival_state"`
+	VisibilityArchivalState string   `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       bool     `tfsdk:"is_global_namespace"`
+	FailoverVersion         int      `tfsdk:"failover_version"`
+	FailoverHistory         []string `tfsdk:"failover_history"`
 }
 
 func (d *NamespaceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -55,51 +63,108 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Namespace name",
-				Optional:            false,
+				Required:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Namespace identifier",
 				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.Any(),
+				},
 			},
-			"Description": schema.StringAttribute{
+			"description": schema.StringAttribute{
 				MarkdownDescription: "Namespace Description",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
-			"OwnerEmail": schema.StringAttribute{
+			"owner_email": schema.StringAttribute{
 				MarkdownDescription: "Namespace Owner Email",
+				Computed:            true,
 				Optional:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_@]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
-			"State": schema.StringAttribute{
+			"state": schema.StringAttribute{
 				MarkdownDescription: "State of Namespace",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.Any(),
+				},
 			},
-			"ActiveClusterName": schema.StringAttribute{
+			"active_cluster_name": schema.StringAttribute{
 				MarkdownDescription: "Active Cluster Name",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
-			"Clusters": schema.ListAttribute{
+			"clusters": schema.ListAttribute{
 				MarkdownDescription: "Temporal Clusters",
-				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
+				Validators: []validator.List{
+					listvalidator.Any(),
+				},
 			},
-			"HistoryArchivalState": schema.StringAttribute{
+			"history_archival_state": schema.StringAttribute{
 				MarkdownDescription: "History Archival State",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
-			"VisibilityArchivalState": schema.StringAttribute{
+			"visibility_archival_state": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival State",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.String{
+					stringvalidator.RegexMatches(
+						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
+						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
+					),
+				},
 			},
-			"IsGlobalNamespace": schema.BoolAttribute{
+			"is_global_namespace": schema.BoolAttribute{
 				MarkdownDescription: "Namespace is Global",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.Bool{
+					boolvalidator.Any(),
+				},
 			},
-			"FailoverVersion": schema.Int64Attribute{
+			"failover_version": schema.NumberAttribute{
 				MarkdownDescription: "Failover Version",
-				Optional:            true,
+				Computed:            true,
+				Validators: []validator.Number{
+					numbervalidator.Any(),
+				},
 			},
-			"FailoverHistory": schema.ListAttribute{
+			"failover_history": schema.ListAttribute{
 				MarkdownDescription: "Failover History",
-				Optional:            true,
+				ElementType:         types.StringType,
+				Computed:            true,
+				Validators: []validator.List{
+					listvalidator.Any(),
+				},
 			},
 		},
 	}
@@ -127,42 +192,32 @@ func (d *NamespaceDataSource) Configure(ctx context.Context, req datasource.Conf
 }
 
 func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
-	var data NamespaceDataSourceModel
-
-	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// Read Terraform configuration data into the model
-	resp.Diagnostics.Append(req.Config.Get(ctx, &data)...)
-
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
+	var data *NamespaceDataSourceModel
+	var name string
+	diags := req.Config.GetAttribute(ctx, path.Root("name"), &name)
+	resp.Diagnostics.Append(diags...)
 	ns, err := d.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: data.Name.ValueString(),
-		Id:        data.Id.String(),
+		Namespace: name,
 	})
-	data = NamespaceDataSourceModel{
-		Name:                    types.StringValue(ns.NamespaceInfo.Name),
-		Id:                      types.StringValue(ns.NamespaceInfo.Id),
-		Description:             types.StringValue(ns.NamespaceInfo.Description),
-		OwnerEmail:              types.StringValue(ns.NamespaceInfo.OwnerEmail),
-		State:                   types.StringValue(ns.NamespaceInfo.State.String()),
-		ActiveClusterName:       types.StringValue(ns.ReplicationConfig.ActiveClusterName),
-		HistoryArchivalState:    types.StringValue(ns.Config.HistoryArchivalState.String()),
-		VisibilityArchivalState: types.StringValue(ns.Config.VisibilityArchivalState.String()),
-		IsGlobalNamespace:       types.BoolValue(ns.IsGlobalNamespace),
-		FailoverVersion:         types.Int64Value(ns.FailoverVersion),
+	fmt.Println("Hurma", ns)
+	data = &NamespaceDataSourceModel{
+		Name:                    ns.NamespaceInfo.GetName(),
+		Id:                      ns.NamespaceInfo.GetId(),
+		Description:             ns.NamespaceInfo.GetDescription(),
+		OwnerEmail:              ns.NamespaceInfo.GetOwnerEmail(),
+		State:                   enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())],
+		ActiveClusterName:       ns.GetReplicationConfig().GetActiveClusterName(),
+		HistoryArchivalState:    enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())],
+		VisibilityArchivalState: enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())],
+		IsGlobalNamespace:       ns.GetIsGlobalNamespace(),
+		FailoverVersion:         int(ns.GetFailoverVersion()),
 	}
 
-	for _, clusters := range ns.ReplicationConfig.Clusters {
-		data.Clusters = append(data.Clusters, types.StringValue(clusters.ClusterName))
+	for _, clusters := range ns.GetReplicationConfig().GetClusters() {
+		data.Clusters = append(data.Clusters, clusters.ClusterName)
 	}
-	for _, failover := range ns.FailoverHistory {
-		data.Clusters = append(data.Clusters, types.StringValue(failover.String()))
+	for _, failover := range ns.GetFailoverHistory() {
+		data.Clusters = append(data.Clusters, failover.String())
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
@@ -174,5 +229,9 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 	tflog.Trace(ctx, "read a data source")
 
 	// Save data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	diags = resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }

@@ -12,6 +12,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
+	v12 "go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -185,7 +187,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	tflog.Trace(ctx, "created a resource")
 
 	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Id: data.Id.ValueString(),
+		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
@@ -237,7 +239,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Id: data.Id.ValueString(),
+		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
@@ -290,15 +292,94 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data NamespaceResourceModel
 
-	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Save updated data into Terraform state
+	// reteniton := DefaultNamespaceRetention
+	request := &workflowservice.UpdateNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+		UpdateInfo: &v12.UpdateNamespaceInfo{
+			Description: data.Description.ValueString(),
+		},
+		Config:            &v12.NamespaceConfig{},
+		ReplicationConfig: &replication.NamespaceReplicationConfig{},
+		// promote local namespace to global namespace. Ignored if namespace is already global namespace.
+		PromoteNamespace: false,
+	}
+	// Namespace:                        data.Name.ValueString(),
+	// Description:                      data.Description.ValueString(),
+	// OwnerEmail:                       data.OwnerEmail.ValueString(),
+	// WorkflowExecutionRetentionPeriod: &reteniton,
+	// // Data:                             data.,
+	// // WorkflowExecutionRetentionPeriod: &retention,
+	// // Clusters:                         data.Clusters,
+	// ActiveClusterName: data.ActiveClusterName.ValueString(),
+	// // HistoryArchivalState:             archState,
+	// // HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
+	// // VisibilityArchivalState:          archVisState,
+	// // VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
+	// IsGlobalNamespace: data.IsGlobalNamespace.ValueBool(),
+	// }
+
+	_, err := r.client.UpdateNamespace(ctx, request)
+	if err != nil {
+		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
+			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
+			return
+		} else {
+			resp.Diagnostics.AddError(data.Name.ValueString(), "namespace is already registered: "+err.Error())
+			return
+		}
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
+	tflog.Trace(ctx, "created a resource")
+
+	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
+		return
+	}
+
+	data = NamespaceResourceModel{
+		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
+		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
+		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
+		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
+		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
+		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
+		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
+	}
+	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
+		var clusters []string
+		clusters = append(clusters, cluster.ClusterName)
+		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
+
+	}
+	failoverHistory := ns.GetFailoverHistory()
+	if failoverHistory != nil {
+		for _, failover := range ns.GetFailoverHistory() {
+			var history []string
+			history = append(history, failover.String())
+			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
+		}
+	} else {
+		data.FailoverHistory = types.ListNull(types.StringType)
+	}
+
+	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }
 
 func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {

@@ -17,7 +17,8 @@ data "temporal_namespace" "test" {
 }
 
 resource "temporal_namespace" "hurma" {
-  name = "hurma"
+  name        = "hurma"
+  description = "This is a test description"
 }
 output "namespace" {
   value = data.temporal_namespace.test

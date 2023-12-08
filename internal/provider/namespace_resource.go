@@ -3,13 +3,14 @@ package provider
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"go.temporal.io/api/operatorservice/v1"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -23,7 +24,7 @@ func NewNamespaceResource() resource.Resource {
 
 // NamespaceResource the resource implementation.
 type NamespaceResource struct {
-	client *http.Client
+	client operatorservice.OperatorServiceClient
 }
 
 // NamespaceResourceModel describes the resource data model.
@@ -100,27 +101,32 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 }
 
 func (r *NamespaceResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
+	tflog.Info(ctx, "Configuring Temporal Namespace Resource")
+
 	// Prevent panic if the provider has not been configured.
 	if req.ProviderData == nil {
 		return
 	}
 
-	client, ok := req.ProviderData.(*http.Client)
-
+	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
+	connection, ok := req.ProviderData.(grpc.ClientConnInterface)
 	if !ok {
 		resp.Diagnostics.AddError(
-			"Unexpected Resource Configure Type",
-			fmt.Sprintf("Expected *http.Client, got: %T. Please report this issue to the provider developers.", req.ProviderData),
+			"Unexpected Data Source Configure Type",
+			fmt.Sprintf("Expected grpc.ClientConnInterface), got: %T. Please report this issue to the provider developers.", req.ProviderData),
 		)
 
 		return
 	}
 
+	client := operatorservice.NewOperatorServiceClient(connection)
 	r.client = client
+
+	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
 }
 
 func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
-	var data ExampleResourceModel
+	var data NamespaceResourceModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -150,7 +156,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 }
 
 func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data ExampleResourceModel
+	var data NamespaceResourceModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
@@ -172,7 +178,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 }
 
 func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var data ExampleResourceModel
+	var data NamespaceResourceModel
 
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
@@ -194,7 +200,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 }
 
 func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data ExampleResourceModel
+	var data NamespaceResourceModel
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)

@@ -141,7 +141,6 @@ func (d *NamespaceDataSource) Configure(ctx context.Context, req datasource.Conf
 	d.client = client
 
 	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
-
 }
 
 func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {

@@ -9,6 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -30,18 +31,18 @@ type NamespaceResource struct {
 
 // NamespaceResourceModel describes the resource data model.
 type NamespaceResourceModel struct {
-	Name                    string       `tfsdk:"name"`
-	Id                      types.String `tfsdk:"id"`
-	Description             string       `tfsdk:"description"`
-	OwnerEmail              string       `tfsdk:"owner_email"`
-	State                   string       `tfsdk:"state"`
-	ActiveClusterName       string       `tfsdk:"active_cluster_name"`
-	Clusters                []string     `tfsdk:"clusters"`
-	HistoryArchivalState    string       `tfsdk:"history_archival_state"`
-	VisibilityArchivalState string       `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       bool         `tfsdk:"is_global_namespace"`
-	FailoverVersion         int          `tfsdk:"failover_version"`
-	FailoverHistory         []string     `tfsdk:"failover_history"`
+	Name                    string   `tfsdk:"name"`
+	Id                      string   `tfsdk:"id"`
+	Description             string   `tfsdk:"description"`
+	OwnerEmail              string   `tfsdk:"owner_email"`
+	State                   string   `tfsdk:"state"`
+	ActiveClusterName       string   `tfsdk:"active_cluster_name"`
+	Clusters                []string `tfsdk:"clusters"`
+	HistoryArchivalState    string   `tfsdk:"history_archival_state"`
+	VisibilityArchivalState string   `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       bool     `tfsdk:"is_global_namespace"`
+	FailoverVersion         int      `tfsdk:"failover_version"`
+	FailoverHistory         []string `tfsdk:"failover_history"`
 }
 
 func (r *NamespaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -186,12 +187,45 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: data.Name,
+		Id:        data.Id,
+	})
 
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	data = NamespaceResourceModel{
+		Name:                    ns.NamespaceInfo.GetName(),
+		Id:                      ns.NamespaceInfo.GetId(),
+		Description:             ns.NamespaceInfo.GetDescription(),
+		OwnerEmail:              ns.NamespaceInfo.GetOwnerEmail(),
+		State:                   enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())],
+		ActiveClusterName:       ns.GetReplicationConfig().GetActiveClusterName(),
+		HistoryArchivalState:    enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())],
+		VisibilityArchivalState: enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())],
+		IsGlobalNamespace:       ns.GetIsGlobalNamespace(),
+		FailoverVersion:         int(ns.GetFailoverVersion()),
+	}
+
+	for _, clusters := range ns.GetReplicationConfig().GetClusters() {
+		data.Clusters = append(data.Clusters, clusters.ClusterName)
+	}
+	for _, failover := range ns.GetFailoverHistory() {
+		data.Clusters = append(data.Clusters, failover.String())
+	}
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
+		return
+	}
+
+	tflog.Trace(ctx, "read a Temporal Namespace resource")
+
+	// Set refreshed state
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }
 
 func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
@@ -241,7 +275,6 @@ func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteReque
 	// if resp.Diagnostics.HasError() {
 	// 	return
 	// }
-
 }
 
 func (r *NamespaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

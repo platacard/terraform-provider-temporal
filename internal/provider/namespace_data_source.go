@@ -34,18 +34,18 @@ type NamespaceDataSource struct {
 
 // NamespaceDataSourceModel describes the data source data model.
 type NamespaceDataSourceModel struct {
-	Name                    string       `tfsdk:"name"`
-	Id                      types.String `tfsdk:"id"`
-	Description             string       `tfsdk:"description"`
-	OwnerEmail              string       `tfsdk:"owner_email"`
-	State                   string       `tfsdk:"state"`
-	ActiveClusterName       string       `tfsdk:"active_cluster_name"`
-	Clusters                []string     `tfsdk:"clusters"`
-	HistoryArchivalState    string       `tfsdk:"history_archival_state"`
-	VisibilityArchivalState string       `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       bool         `tfsdk:"is_global_namespace"`
-	FailoverVersion         int          `tfsdk:"failover_version"`
-	FailoverHistory         []string     `tfsdk:"failover_history"`
+	Name                    string   `tfsdk:"name"`
+	Id                      string   `tfsdk:"id"`
+	Description             string   `tfsdk:"description"`
+	OwnerEmail              string   `tfsdk:"owner_email"`
+	State                   string   `tfsdk:"state"`
+	ActiveClusterName       string   `tfsdk:"active_cluster_name"`
+	Clusters                []string `tfsdk:"clusters"`
+	HistoryArchivalState    string   `tfsdk:"history_archival_state"`
+	VisibilityArchivalState string   `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       bool     `tfsdk:"is_global_namespace"`
+	FailoverVersion         int      `tfsdk:"failover_version"`
+	FailoverHistory         []string `tfsdk:"failover_history"`
 }
 
 func (d *NamespaceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
@@ -157,7 +157,7 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 	var data *NamespaceDataSourceModel
 	data = &NamespaceDataSourceModel{
 		Name:                    ns.NamespaceInfo.GetName(),
-		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
+		Id:                      ns.NamespaceInfo.GetId(),
 		Description:             ns.NamespaceInfo.GetDescription(),
 		OwnerEmail:              ns.NamespaceInfo.GetOwnerEmail(),
 		State:                   enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())],

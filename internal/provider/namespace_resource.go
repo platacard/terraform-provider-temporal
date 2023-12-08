@@ -42,25 +42,60 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Temporal Namespace resource",
 
-		// Attributes: map[string]schema.Attribute{
-		// 	"configurable_attribute": schema.StringAttribute{
-		// 		MarkdownDescription: "Example configurable attribute",
-		// 		Optional:            true,
-		// 	},
-		// 	"defaulted": schema.StringAttribute{
-		// 		MarkdownDescription: "Example configurable attribute with default value",
-		// 		Optional:            true,
-		// 		Computed:            true,
-		// 		Default:             stringdefault.StaticString("example value when not configured"),
-		// 	},
-		// 	"id": schema.StringAttribute{
-		// 		Computed:            true,
-		// 		MarkdownDescription: "Example identifier",
-		// 		PlanModifiers: []planmodifier.String{
-		// 			stringplanmodifier.UseStateForUnknown(),
-		// 		},
-		// 	},
-		// },
+		Attributes: map[string]schema.Attribute{
+			"name": schema.StringAttribute{
+				MarkdownDescription: "Namespace name",
+				Required:            true,
+			},
+			"id": schema.StringAttribute{
+				MarkdownDescription: "Namespace identifier",
+				Computed:            true,
+			},
+			"description": schema.StringAttribute{
+				MarkdownDescription: "Namespace Description",
+				Optional:            true,
+				Computed:            true,
+			},
+			"owner_email": schema.StringAttribute{
+				MarkdownDescription: "Namespace Owner Email",
+				Optional:            true,
+				Computed:            true,
+			},
+			"state": schema.StringAttribute{
+				MarkdownDescription: "State of Namespace",
+				Computed:            true,
+			},
+			"active_cluster_name": schema.StringAttribute{
+				MarkdownDescription: "Active Cluster Name",
+				Computed:            true,
+			},
+			"clusters": schema.ListAttribute{
+				MarkdownDescription: "Temporal Clusters",
+				Computed:            true,
+				ElementType:         types.StringType,
+			},
+			"history_archival_state": schema.StringAttribute{
+				MarkdownDescription: "History Archival State",
+				Computed:            true,
+			},
+			"visibility_archival_state": schema.StringAttribute{
+				MarkdownDescription: "Visibility Archival State",
+				Computed:            true,
+			},
+			"is_global_namespace": schema.BoolAttribute{
+				MarkdownDescription: "Namespace is Global",
+				Computed:            true,
+			},
+			"failover_version": schema.NumberAttribute{
+				MarkdownDescription: "Failover Version",
+				Computed:            true,
+			},
+			"failover_history": schema.ListAttribute{
+				MarkdownDescription: "Failover History",
+				ElementType:         types.StringType,
+				Computed:            true,
+			},
+		},
 	}
 }
 

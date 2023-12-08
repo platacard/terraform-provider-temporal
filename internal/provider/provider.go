@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -51,6 +52,8 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 }
 
 func (p *TemporalProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
+	tflog.Info(ctx, "Configuring Temporal client")
+
 	// Retrieve provider data from configuration
 	var config temporalProviderModel
 	diags := req.Config.Get(ctx, &config)
@@ -151,6 +154,13 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 	// Create a new Temporal client using the configuration values
 	// jwtCreds := strings.Join([]string{"Bearer", token}, " ")
+	ctx = tflog.SetField(ctx, "temporal_host", host)
+	ctx = tflog.SetField(ctx, "temporal_port", port)
+	ctx = tflog.SetField(ctx, "temporal_token", token)
+	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "temporal_token")
+
+	tflog.Debug(ctx, "Creating Temporal client")
+
 	endpoint := strings.Join([]string{host, port}, ":")
 	client, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
@@ -168,6 +178,8 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	// type Configure methods.
 	resp.DataSourceData = client
 	resp.ResourceData = client
+
+	tflog.Info(ctx, "Configured Temporal client", map[string]any{"success": true})
 }
 
 func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Resource {

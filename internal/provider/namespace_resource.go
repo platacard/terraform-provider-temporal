@@ -9,7 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 )
 
@@ -24,14 +25,23 @@ func NewNamespaceResource() resource.Resource {
 
 // NamespaceResource the resource implementation.
 type NamespaceResource struct {
-	client operatorservice.OperatorServiceClient
+	client workflowservice.WorkflowServiceClient
 }
 
 // NamespaceResourceModel describes the resource data model.
 type NamespaceResourceModel struct {
-	ConfigurableAttribute types.String `tfsdk:"configurable_attribute"`
-	Defaulted             types.String `tfsdk:"defaulted"`
-	Id                    types.String `tfsdk:"id"`
+	Name                    string       `tfsdk:"name"`
+	Id                      types.String `tfsdk:"id"`
+	Description             string       `tfsdk:"description"`
+	OwnerEmail              string       `tfsdk:"owner_email"`
+	State                   string       `tfsdk:"state"`
+	ActiveClusterName       string       `tfsdk:"active_cluster_name"`
+	Clusters                []string     `tfsdk:"clusters"`
+	HistoryArchivalState    string       `tfsdk:"history_archival_state"`
+	VisibilityArchivalState string       `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       bool         `tfsdk:"is_global_namespace"`
+	FailoverVersion         int          `tfsdk:"failover_version"`
+	FailoverHistory         []string     `tfsdk:"failover_history"`
 }
 
 func (r *NamespaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -119,7 +129,7 @@ func (r *NamespaceResource) Configure(ctx context.Context, req resource.Configur
 		return
 	}
 
-	client := operatorservice.NewOperatorServiceClient(connection)
+	client := workflowservice.NewWorkflowServiceClient(connection)
 	r.client = client
 
 	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
@@ -135,17 +145,35 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create example, got error: %s", err))
-	//     return
-	// }
+	request := &workflowservice.RegisterNamespaceRequest{
+		Namespace:                        ns,
+		Description:                      description,
+		OwnerEmail:                       ownerEmail,
+		Data:                             data,
+		WorkflowExecutionRetentionPeriod: &retention,
+		Clusters:                         clusters,
+		ActiveClusterName:                activeCluster,
+		HistoryArchivalState:             archState,
+		HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
+		VisibilityArchivalState:          archVisState,
+		VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
+		IsGlobalNamespace:                isGlobalNamespace,
+	}
 
-	// For the purposes of this example code, hardcoding a response value to
-	// save into the Terraform state.
-	data.Id = types.StringValue("example-id")
+	_, err := r.client.RegisterNamespace(ctx, request)
+	if err != nil {
+		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
+			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
+			return
+		} else {
+			resp.Diagnostics.AddError(data.Name, "namespace is already registered: "+err.Error())
+			return
+		}
+	}
+
+	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
+
+	// data.Id = types.StringValue("example-id")
 
 	// Write logs using the tflog package
 	// Documentation: https://terraform.io/plugin/log
@@ -165,15 +193,6 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read example, got error: %s", err))
-	//     return
-	// }
-
-	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
@@ -187,35 +206,44 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update example, got error: %s", err))
-	//     return
-	// }
-
 	// Save updated data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 }
 
 func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	var data NamespaceResourceModel
+	// var data NamespaceResourceModel
 
-	// Read Terraform prior state data into the model
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	// connection, ok := req.ProviderData.(grpc.ClientConnInterface)
+	// if !ok {
+	// 	resp.Diagnostics.AddError(
+	// 		"Unexpected Data Source Configure Type",
+	// 		fmt.Sprintf("Expected grpc.ClientConnInterface), got: %T. Please report this issue to the provider developers.", req.ProviderData),
+	// 	)
 
-	if resp.Diagnostics.HasError() {
-		return
-	}
-
-	// If applicable, this is a great opportunity to initialize any necessary
-	// provider client data and make a call using it.
-	// httpResp, err := r.client.Do(httpReq)
-	// if err != nil {
-	//     resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to delete example, got error: %s", err))
-	//     return
+	// 	return
 	// }
+
+	// client := operatorservice.NewOperatorServiceClient(connection)
+
+	// _, err := client.DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{
+	// 	Namespace: ns,
+	// })
+	// if err != nil {
+	// 	switch err.(type) {
+	// 	case *serviceerror.NamespaceNotFound:
+	// 		resp.Diagnostics.AddError("Request error", "Namespace not found: "+err.Error())
+	// 		return
+	// 	default:
+	// 		resp.Diagnostics.AddError("Request error", "Unable to delete namespace: "+err.Error())
+	// 	}
+	// }
+	// // Read Terraform prior state data into the model
+	// resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+
+	// if resp.Diagnostics.HasError() {
+	// 	return
+	// }
+
 }
 
 func (r *NamespaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

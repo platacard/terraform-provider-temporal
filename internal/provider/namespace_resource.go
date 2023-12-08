@@ -31,18 +31,18 @@ type NamespaceResource struct {
 
 // NamespaceResourceModel describes the resource data model.
 type NamespaceResourceModel struct {
-	Name                    string   `tfsdk:"name"`
-	Id                      string   `tfsdk:"id"`
-	Description             string   `tfsdk:"description"`
-	OwnerEmail              string   `tfsdk:"owner_email"`
-	State                   string   `tfsdk:"state"`
-	ActiveClusterName       string   `tfsdk:"active_cluster_name"`
-	Clusters                []string `tfsdk:"clusters"`
-	HistoryArchivalState    string   `tfsdk:"history_archival_state"`
-	VisibilityArchivalState string   `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       bool     `tfsdk:"is_global_namespace"`
-	FailoverVersion         int      `tfsdk:"failover_version"`
-	FailoverHistory         []string `tfsdk:"failover_history"`
+	Name                    types.String   `tfsdk:"name"`
+	Id                      types.String   `tfsdk:"id"`
+	Description             types.String   `tfsdk:"description"`
+	OwnerEmail              types.String   `tfsdk:"owner_email"`
+	State                   types.String   `tfsdk:"state"`
+	ActiveClusterName       types.String   `tfsdk:"active_cluster_name"`
+	Clusters                []types.String `tfsdk:"clusters"`
+	HistoryArchivalState    types.String   `tfsdk:"history_archival_state"`
+	VisibilityArchivalState types.String   `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       types.Bool     `tfsdk:"is_global_namespace"`
+	FailoverVersion         types.Int64    `tfsdk:"failover_version"`
+	FailoverHistory         []types.String `tfsdk:"failover_history"`
 }
 
 func (r *NamespaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -106,6 +106,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Failover History",
 				ElementType:         types.StringType,
 				Computed:            true,
+				Optional:            true,
 			},
 		},
 	}
@@ -147,18 +148,18 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	request := &workflowservice.RegisterNamespaceRequest{
-		Namespace:   data.Name,
-		Description: data.Description,
-		OwnerEmail:  data.OwnerEmail,
+		Namespace:   data.Name.ValueString(),
+		Description: data.Description.ValueString(),
+		OwnerEmail:  data.OwnerEmail.ValueString(),
 		// Data:                             data.,
 		// WorkflowExecutionRetentionPeriod: &retention,
 		// Clusters:                         data.Clusters,
-		ActiveClusterName: data.ActiveClusterName,
+		ActiveClusterName: data.ActiveClusterName.ValueString(),
 		// HistoryArchivalState:             archState,
 		// HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
 		// VisibilityArchivalState:          archVisState,
 		// VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
-		IsGlobalNamespace: data.IsGlobalNamespace,
+		IsGlobalNamespace: data.IsGlobalNamespace.ValueBool(),
 	}
 
 	_, err := r.client.RegisterNamespace(ctx, request)
@@ -167,7 +168,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
 			return
 		} else {
-			resp.Diagnostics.AddError(data.Name, "namespace is already registered: "+err.Error())
+			resp.Diagnostics.AddError(data.Name.ValueString(), "namespace is already registered: "+err.Error())
 			return
 		}
 	}
@@ -191,28 +192,28 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: data.Name,
-		Id:        data.Id,
+		Namespace: data.Name.ValueString(),
+		Id:        data.Id.ValueString(),
 	})
 
 	data = NamespaceResourceModel{
-		Name:                    ns.NamespaceInfo.GetName(),
-		Id:                      ns.NamespaceInfo.GetId(),
-		Description:             ns.NamespaceInfo.GetDescription(),
-		OwnerEmail:              ns.NamespaceInfo.GetOwnerEmail(),
-		State:                   enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())],
-		ActiveClusterName:       ns.GetReplicationConfig().GetActiveClusterName(),
-		HistoryArchivalState:    enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())],
-		VisibilityArchivalState: enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())],
-		IsGlobalNamespace:       ns.GetIsGlobalNamespace(),
-		FailoverVersion:         int(ns.GetFailoverVersion()),
+		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
+		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
+		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
+		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
+		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
+		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
+		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
 	}
 
 	for _, clusters := range ns.GetReplicationConfig().GetClusters() {
-		data.Clusters = append(data.Clusters, clusters.ClusterName)
+		data.Clusters = append(data.Clusters, types.StringValue(clusters.ClusterName))
 	}
 	for _, failover := range ns.GetFailoverHistory() {
-		data.Clusters = append(data.Clusters, failover.String())
+		data.Clusters = append(data.Clusters, types.StringValue(failover.String()))
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))

@@ -23,6 +23,6 @@ output "namespace" {
   value = data.temporal_namespace.test
 }
 
-output "new_namespace" {
-  value = temporal_namespace.hurma
-}
+# output "new_namespace" {
+#   value = temporal_namespace.hurma
+# }

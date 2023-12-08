@@ -146,18 +146,18 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	request := &workflowservice.RegisterNamespaceRequest{
-		Namespace:                        ns,
-		Description:                      description,
-		OwnerEmail:                       ownerEmail,
-		Data:                             data,
-		WorkflowExecutionRetentionPeriod: &retention,
-		Clusters:                         clusters,
-		ActiveClusterName:                activeCluster,
-		HistoryArchivalState:             archState,
-		HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
-		VisibilityArchivalState:          archVisState,
-		VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
-		IsGlobalNamespace:                isGlobalNamespace,
+		Namespace:   data.Name,
+		Description: data.Description,
+		OwnerEmail:  data.OwnerEmail,
+		// Data:                             data.,
+		// WorkflowExecutionRetentionPeriod: &retention,
+		// Clusters:                         data.Clusters,
+		ActiveClusterName: data.ActiveClusterName,
+		// HistoryArchivalState:             archState,
+		// HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
+		// VisibilityArchivalState:          archVisState,
+		// VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
+		IsGlobalNamespace: data.IsGlobalNamespace,
 	}
 
 	_, err := r.client.RegisterNamespace(ctx, request)
@@ -172,15 +172,13 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
-
-	// data.Id = types.StringValue("example-id")
-
-	// Write logs using the tflog package
-	// Documentation: https://terraform.io/plugin/log
 	tflog.Trace(ctx, "created a resource")
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 }
 
 func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {

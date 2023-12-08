@@ -17,12 +17,12 @@ data "temporal_namespace" "test" {
 }
 
 resource "temporal_namespace" "hurma" {
-  name = "sdfaasdf"
+  name = "hurma"
 }
 output "namespace" {
   value = data.temporal_namespace.test
 }
 
-# output "new_namespace" {
-#   value = temporal_namespace.hurma
-# }
+output "new_namespace" {
+  value = temporal_namespace.hurma
+}

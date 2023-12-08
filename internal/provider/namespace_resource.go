@@ -3,16 +3,22 @@ package provider
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
+)
+
+const (
+	DefaultNamespaceRetention = 3 * 24 * time.Hour
 )
 
 var (
@@ -31,18 +37,18 @@ type NamespaceResource struct {
 
 // NamespaceResourceModel describes the resource data model.
 type NamespaceResourceModel struct {
-	Name                    types.String   `tfsdk:"name"`
-	Id                      types.String   `tfsdk:"id"`
-	Description             types.String   `tfsdk:"description"`
-	OwnerEmail              types.String   `tfsdk:"owner_email"`
-	State                   types.String   `tfsdk:"state"`
-	ActiveClusterName       types.String   `tfsdk:"active_cluster_name"`
-	Clusters                []types.String `tfsdk:"clusters"`
-	HistoryArchivalState    types.String   `tfsdk:"history_archival_state"`
-	VisibilityArchivalState types.String   `tfsdk:"visibility_archival_state"`
-	IsGlobalNamespace       types.Bool     `tfsdk:"is_global_namespace"`
-	FailoverVersion         types.Int64    `tfsdk:"failover_version"`
-	FailoverHistory         []types.String `tfsdk:"failover_history"`
+	Name                    types.String `tfsdk:"name"`
+	Id                      types.String `tfsdk:"id"`
+	Description             types.String `tfsdk:"description"`
+	OwnerEmail              types.String `tfsdk:"owner_email"`
+	State                   types.String `tfsdk:"state"`
+	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
+	Clusters                types.List   `tfsdk:"clusters"`
+	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
+	VisibilityArchivalState types.String `tfsdk:"visibility_archival_state"`
+	IsGlobalNamespace       types.Bool   `tfsdk:"is_global_namespace"`
+	FailoverVersion         types.Int64  `tfsdk:"failover_version"`
+	FailoverHistory         types.List   `tfsdk:"failover_history"`
 }
 
 func (r *NamespaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -98,7 +104,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Namespace is Global",
 				Computed:            true,
 			},
-			"failover_version": schema.NumberAttribute{
+			"failover_version": schema.Int64Attribute{
 				MarkdownDescription: "Failover Version",
 				Computed:            true,
 			},
@@ -106,7 +112,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Failover History",
 				ElementType:         types.StringType,
 				Computed:            true,
-				Optional:            true,
+				Default:             listdefault.StaticValue(types.ListNull(types.StringType)),
 			},
 		},
 	}
@@ -147,10 +153,12 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
+	reteniton := DefaultNamespaceRetention
 	request := &workflowservice.RegisterNamespaceRequest{
-		Namespace:   data.Name.ValueString(),
-		Description: data.Description.ValueString(),
-		OwnerEmail:  data.OwnerEmail.ValueString(),
+		Namespace:                        data.Name.ValueString(),
+		Description:                      data.Description.ValueString(),
+		OwnerEmail:                       data.OwnerEmail.ValueString(),
+		WorkflowExecutionRetentionPeriod: &reteniton,
 		// Data:                             data.,
 		// WorkflowExecutionRetentionPeriod: &retention,
 		// Clusters:                         data.Clusters,
@@ -176,6 +184,43 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 
+	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Id: data.Id.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
+		return
+	}
+
+	data = NamespaceResourceModel{
+		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
+		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
+		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
+		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
+		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
+		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
+		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
+	}
+	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
+		var clusters []string
+		clusters = append(clusters, cluster.ClusterName)
+		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
+
+	}
+	failoverHistory := ns.GetFailoverHistory()
+	if failoverHistory != nil {
+		for _, failover := range ns.GetFailoverHistory() {
+			var history []string
+			history = append(history, failover.String())
+			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
+		}
+	} else {
+		data.FailoverHistory = types.ListNull(types.StringType)
+	}
+
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
@@ -192,9 +237,12 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: data.Name.ValueString(),
-		Id:        data.Id.ValueString(),
+		Id: data.Id.ValueString(),
 	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
+		return
+	}
 
 	data = NamespaceResourceModel{
 		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
@@ -209,11 +257,21 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
 	}
 
-	for _, clusters := range ns.GetReplicationConfig().GetClusters() {
-		data.Clusters = append(data.Clusters, types.StringValue(clusters.ClusterName))
+	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
+		var clusters []string
+		clusters = append(clusters, cluster.ClusterName)
+		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
+
 	}
-	for _, failover := range ns.GetFailoverHistory() {
-		data.Clusters = append(data.Clusters, types.StringValue(failover.String()))
+	failoverHistory := ns.GetFailoverHistory()
+	if failoverHistory != nil {
+		for _, failover := range ns.GetFailoverHistory() {
+			var history []string
+			history = append(history, failover.String())
+			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
+		}
+	} else {
+		data.FailoverHistory = types.ListNull(types.StringType)
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))

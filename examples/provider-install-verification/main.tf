@@ -20,7 +20,7 @@ resource "temporal_namespace" "hurma" {
   name                = "hurma"
   description         = "This is a test description edited"
   is_global_namespace = false
-  owner_email         = "test123@dif.tech"
+  owner_email         = "test1233@dif.tech"
 }
 resource "temporal_namespace" "test" {
   name        = "asdf"

@@ -25,8 +25,7 @@ import (
 )
 
 const (
-	day              = 24 * time.Hour
-	defaultRetention = 3 * day
+	day = 24 * time.Hour
 )
 
 var (
@@ -175,25 +174,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	// retention := defaultRetention
-	// if !data.Retention.IsNull() {
 	retention := time.Duration(data.Retention.ValueInt64()) * day
-	// }
-	// Data:                             data.
-	// WorkflowExecutionRetentionPeriod: &retention
-	// Clusters:                         data.Clusters
-	// var activeClusterName string
-	// if !data.ActiveClusterName.IsNull() {
-	// 	activeClusterName = data.ActiveClusterName.ValueString()
-	// }
-	// HistoryArchivalState:             archState
-	// HistoryArchivalUri:               c.String(FlagHistoryArchivalURI)
-	// VisibilityArchivalState:          archVisState
-	// VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI)
-	// var isGlobalNamespace bool
-	// if !data.IsGlobalNamespace.IsNull() {
-	// 	isGlobalNamespace = data.IsGlobalNamespace.ValueBool()
-	// }
 
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        data.Name.ValueString(),
@@ -321,31 +302,44 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
+	retention := time.Duration(data.Retention.ValueInt64()) * day
+
 	// reteniton := DefaultNamespaceRetention
 	request := &workflowservice.UpdateNamespaceRequest{
 		Namespace: data.Name.ValueString(),
 		UpdateInfo: &v12.UpdateNamespaceInfo{
+			// Description string `protobuf:"bytes,1,opt,name=description,proto3" json:"description,omitempty"`
+			// OwnerEmail  string `protobuf:"bytes,2,opt,name=owner_email,json=ownerEmail,proto3" json:"owner_email,omitempty"`
+			// // A key-value map for any customized purpose.
+			// // If data already exists on the namespace,
+			// // this will merge with the existing key values.
+			// Data map[string]string `protobuf:"bytes,3,rep,name=data,proto3" json:"data,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+			// // New namespace state, server will reject if transition is not allowed.
+			// // Allowed transitions are:
+			// //  Registered -> [ Deleted | Deprecated | Handover ]
+			// //  Handover -> [ Registered ]
+			// // Default is NAMESPACE_STATE_UNSPECIFIED which is do not change state.
+			// State v1.NamespaceState `protobuf:"varint,4,opt,name=state,proto3,enum=temporal.api.enums.v1.NamespaceState" json:"state,omitempty"`
+
 			Description: data.Description.ValueString(),
+			OwnerEmail:  data.OwnerEmail.ValueString(),
 		},
-		Config:            &v12.NamespaceConfig{},
-		ReplicationConfig: &replication.NamespaceReplicationConfig{},
+		Config: &v12.NamespaceConfig{
+			WorkflowExecutionRetentionTtl: &retention,
+			VisibilityArchivalState:       enums.ArchivalState(enums.ArchivalState_value[data.VisibilityArchivalState.ValueString()]),
+			VisibilityArchivalUri:         data.VisibilityArchivalUri.ValueString(),
+			HistoryArchivalState:          enums.ArchivalState(enums.ArchivalState_value[data.HistoryArchivalState.ValueString()]),
+			HistoryArchivalUri:            data.HistoryArchivalUri.ValueString(),
+			// CustomSearchAttributeAliases map[string]string `protobuf:"bytes,7,rep,name=custom_search_attribute_aliases,json=customSearchAttributeAliases,proto3" json:"custom_search_attribute_aliases,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+		},
+		ReplicationConfig: &replication.NamespaceReplicationConfig{
+			// ActiveClusterName string                      `protobuf:"bytes,1,opt,name=active_cluster_name,json=activeClusterName,proto3" json:"active_cluster_name,omitempty"`
+			// Clusters          []*ClusterReplicationConfig `protobuf:"bytes,2,rep,name=clusters,proto3" json:"clusters,omitempty"`
+			// State             v1.ReplicationState         `protobuf:"varint,3,opt,name=state,proto3,enum=temporal.api.enums.v1.ReplicationState" json:"state,omitempty"`
+		},
 		// promote local namespace to global namespace. Ignored if namespace is already global namespace.
-		PromoteNamespace: false,
+		PromoteNamespace: data.IsGlobalNamespace.ValueBool(),
 	}
-	// Namespace:                        data.Name.ValueString(),
-	// Description:                      data.Description.ValueString(),
-	// OwnerEmail:                       data.OwnerEmail.ValueString(),
-	// WorkflowExecutionRetentionPeriod: &reteniton,
-	// // Data:                             data.,
-	// // WorkflowExecutionRetentionPeriod: &retention,
-	// // Clusters:                         data.Clusters,
-	// ActiveClusterName: data.ActiveClusterName.ValueString(),
-	// // HistoryArchivalState:             archState,
-	// // HistoryArchivalUri:               c.String(FlagHistoryArchivalURI),
-	// // VisibilityArchivalState:          archVisState,
-	// // VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
-	// IsGlobalNamespace: data.IsGlobalNamespace.ValueBool(),
-	// }
 
 	_, err := client.UpdateNamespace(ctx, request)
 	if err != nil {

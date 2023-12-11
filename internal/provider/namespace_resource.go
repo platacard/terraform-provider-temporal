@@ -8,13 +8,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listdefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
 	v12 "go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/replication/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
@@ -22,7 +25,8 @@ import (
 )
 
 const (
-	DefaultNamespaceRetention = 3 * 24 * time.Hour
+	day              = 24 * time.Hour
+	defaultRetention = 3 * day
 )
 
 var (
@@ -36,23 +40,26 @@ func NewNamespaceResource() resource.Resource {
 
 // NamespaceResource the resource implementation.
 type NamespaceResource struct {
-	client workflowservice.WorkflowServiceClient
+	client grpc.ClientConnInterface
 }
 
 // NamespaceResourceModel describes the resource data model.
 type NamespaceResourceModel struct {
-	Name                    types.String `tfsdk:"name"`
-	Id                      types.String `tfsdk:"id"`
-	Description             types.String `tfsdk:"description"`
-	OwnerEmail              types.String `tfsdk:"owner_email"`
-	State                   types.String `tfsdk:"state"`
+	Name        types.String `tfsdk:"name"`
+	Id          types.String `tfsdk:"id"`
+	Description types.String `tfsdk:"description"`
+	OwnerEmail  types.String `tfsdk:"owner_email"`
+	Retention   types.Int64  `tfsdk:"retention"`
+	// State                   types.String `tfsdk:"state"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
 	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
+	HistoryArchivalUri      types.String `tfsdk:"history_archival_uri"`
 	VisibilityArchivalState types.String `tfsdk:"visibility_archival_state"`
+	VisibilityArchivalUri   types.String `tfsdk:"visibility_archival_uri"`
 	IsGlobalNamespace       types.Bool   `tfsdk:"is_global_namespace"`
-	FailoverVersion         types.Int64  `tfsdk:"failover_version"`
-	FailoverHistory         types.List   `tfsdk:"failover_history"`
+	// FailoverVersion         types.Int64  `tfsdk:"failover_version"`
+	// FailoverHistory         types.List   `tfsdk:"failover_history"`
 }
 
 func (r *NamespaceResource) Metadata(ctx context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -80,18 +87,23 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Namespace Description",
 				Optional:            true,
 				Computed:            true,
+				Default:             stringdefault.StaticString(""),
 			},
 			"owner_email": schema.StringAttribute{
 				MarkdownDescription: "Namespace Owner Email",
 				Optional:            true,
 				Computed:            true,
+				Default:             stringdefault.StaticString("hurma@dif.tech"),
 			},
-			"state": schema.StringAttribute{
-				MarkdownDescription: "State of Namespace",
+			"retention": schema.Int64Attribute{
+				MarkdownDescription: "Workflow Execution retention",
+				Optional:            true,
 				Computed:            true,
+				Default:             int64default.StaticInt64(3),
 			},
 			"active_cluster_name": schema.StringAttribute{
 				MarkdownDescription: "Active Cluster Name",
+				Optional:            true,
 				Computed:            true,
 			},
 			"clusters": schema.ListAttribute{
@@ -102,24 +114,26 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			"history_archival_state": schema.StringAttribute{
 				MarkdownDescription: "History Archival State",
 				Computed:            true,
+				Optional:            true,
+			},
+			"history_archival_uri": schema.StringAttribute{
+				MarkdownDescription: "History Archival URI",
+				Computed:            true,
+				Optional:            true,
 			},
 			"visibility_archival_state": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival State",
 				Computed:            true,
 			},
+			"visibility_archival_uri": schema.StringAttribute{
+				MarkdownDescription: "Visibility Archival URI",
+				Computed:            true,
+			},
 			"is_global_namespace": schema.BoolAttribute{
 				MarkdownDescription: "Namespace is Global",
+				Optional:            true,
 				Computed:            true,
-			},
-			"failover_version": schema.Int64Attribute{
-				MarkdownDescription: "Failover Version",
-				Computed:            true,
-			},
-			"failover_history": schema.ListAttribute{
-				MarkdownDescription: "Failover History",
-				ElementType:         types.StringType,
-				Computed:            true,
-				Default:             listdefault.StaticValue(types.ListNull(types.StringType)),
+				Default:             booldefault.StaticBool(false),
 			},
 		},
 	}
@@ -134,7 +148,7 @@ func (r *NamespaceResource) Configure(ctx context.Context, req resource.Configur
 	}
 
 	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
-	connection, ok := req.ProviderData.(grpc.ClientConnInterface)
+	client, ok := req.ProviderData.(grpc.ClientConnInterface)
 	if !ok {
 		resp.Diagnostics.AddError(
 			"Unexpected Data Source Configure Type",
@@ -144,7 +158,6 @@ func (r *NamespaceResource) Configure(ctx context.Context, req resource.Configur
 		return
 	}
 
-	client := workflowservice.NewWorkflowServiceClient(connection)
 	r.client = client
 
 	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
@@ -153,6 +166,8 @@ func (r *NamespaceResource) Configure(ctx context.Context, req resource.Configur
 func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	var data NamespaceResourceModel
 
+	client := workflowservice.NewWorkflowServiceClient(r.client)
+
 	// Read Terraform plan data into the model
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 
@@ -160,14 +175,32 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	reteniton := DefaultNamespaceRetention
+	// retention := defaultRetention
+	// if !data.Retention.IsNull() {
+	retention := time.Duration(data.Retention.ValueInt64()) * day
+	// }
+	// Data:                             data.
+	// WorkflowExecutionRetentionPeriod: &retention
+	// Clusters:                         data.Clusters
+	// var activeClusterName string
+	// if !data.ActiveClusterName.IsNull() {
+	// 	activeClusterName = data.ActiveClusterName.ValueString()
+	// }
+	// HistoryArchivalState:             archState
+	// HistoryArchivalUri:               c.String(FlagHistoryArchivalURI)
+	// VisibilityArchivalState:          archVisState
+	// VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI)
+	// var isGlobalNamespace bool
+	// if !data.IsGlobalNamespace.IsNull() {
+	// 	isGlobalNamespace = data.IsGlobalNamespace.ValueBool()
+	// }
+
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        data.Name.ValueString(),
 		Description:                      data.Description.ValueString(),
 		OwnerEmail:                       data.OwnerEmail.ValueString(),
-		WorkflowExecutionRetentionPeriod: &reteniton,
+		WorkflowExecutionRetentionPeriod: &retention,
 		// Data:                             data.,
-		// WorkflowExecutionRetentionPeriod: &retention,
 		// Clusters:                         data.Clusters,
 		ActiveClusterName: data.ActiveClusterName.ValueString(),
 		// HistoryArchivalState:             archState,
@@ -176,8 +209,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		// VisibilityArchivalUri:            c.String(FlagVisibilityArchivalURI),
 		IsGlobalNamespace: data.IsGlobalNamespace.ValueBool(),
 	}
-
-	_, err := r.client.RegisterNamespace(ctx, request)
+	_, err := client.RegisterNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
@@ -191,7 +223,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 
-	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
 		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
@@ -204,28 +236,19 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
 		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
-		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
-		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
+		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
+		IsGlobalNamespace:       data.IsGlobalNamespace,
 	}
 	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
 		var clusters []string
 		clusters = append(clusters, cluster.ClusterName)
 		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
 
-	}
-	failoverHistory := ns.GetFailoverHistory()
-	if failoverHistory != nil {
-		for _, failover := range ns.GetFailoverHistory() {
-			var history []string
-			history = append(history, failover.String())
-			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
-		}
-	} else {
-		data.FailoverHistory = types.ListNull(types.StringType)
 	}
 
 	// Save data into Terraform state
@@ -238,12 +261,14 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	var data NamespaceResourceModel
 
+	client := workflowservice.NewWorkflowServiceClient(r.client)
+
 	// Read Terraform prior state data into the model
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
 		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
@@ -256,12 +281,13 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
 		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
-		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
 	}
 
 	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
@@ -269,16 +295,6 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		clusters = append(clusters, cluster.ClusterName)
 		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
 
-	}
-	failoverHistory := ns.GetFailoverHistory()
-	if failoverHistory != nil {
-		for _, failover := range ns.GetFailoverHistory() {
-			var history []string
-			history = append(history, failover.String())
-			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
-		}
-	} else {
-		data.FailoverHistory = types.ListNull(types.StringType)
 	}
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
@@ -296,6 +312,8 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var data NamespaceResourceModel
+
+	client := workflowservice.NewWorkflowServiceClient(r.client)
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &data)...)
 
@@ -329,7 +347,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 	// IsGlobalNamespace: data.IsGlobalNamespace.ValueBool(),
 	// }
 
-	_, err := r.client.UpdateNamespace(ctx, request)
+	_, err := client.UpdateNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
@@ -343,7 +361,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 
-	ns, err := r.client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
 		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
@@ -356,28 +374,19 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		State:                   types.StringValue(enums.NamespaceState_name[int32(ns.NamespaceInfo.GetState())]),
+		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
 		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
-		FailoverVersion:         types.Int64Value(ns.GetFailoverVersion()),
 	}
 	for _, cluster := range ns.GetReplicationConfig().GetClusters() {
 		var clusters []string
 		clusters = append(clusters, cluster.ClusterName)
 		data.Clusters, _ = types.ListValueFrom(ctx, types.StringType, clusters)
 
-	}
-	failoverHistory := ns.GetFailoverHistory()
-	if failoverHistory != nil {
-		for _, failover := range ns.GetFailoverHistory() {
-			var history []string
-			history = append(history, failover.String())
-			data.FailoverHistory, _ = types.ListValueFrom(ctx, types.StringType, history)
-		}
-	} else {
-		data.FailoverHistory = types.ListNull(types.StringType)
 	}
 
 	// Save data into Terraform state
@@ -388,38 +397,28 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 }
 
 func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
-	// var data NamespaceResourceModel
+	var data NamespaceResourceModel
 
-	// connection, ok := req.ProviderData.(grpc.ClientConnInterface)
-	// if !ok {
-	// 	resp.Diagnostics.AddError(
-	// 		"Unexpected Data Source Configure Type",
-	// 		fmt.Sprintf("Expected grpc.ClientConnInterface), got: %T. Please report this issue to the provider developers.", req.ProviderData),
-	// 	)
+	client := operatorservice.NewOperatorServiceClient(r.client)
 
-	// 	return
-	// }
+	// Read Terraform prior state data into the model
+	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
-	// client := operatorservice.NewOperatorServiceClient(connection)
-
-	// _, err := client.DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{
-	// 	Namespace: ns,
-	// })
-	// if err != nil {
-	// 	switch err.(type) {
-	// 	case *serviceerror.NamespaceNotFound:
-	// 		resp.Diagnostics.AddError("Request error", "Namespace not found: "+err.Error())
-	// 		return
-	// 	default:
-	// 		resp.Diagnostics.AddError("Request error", "Unable to delete namespace: "+err.Error())
-	// 	}
-	// }
-	// // Read Terraform prior state data into the model
-	// resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
-
-	// if resp.Diagnostics.HasError() {
-	// 	return
-	// }
+	_, err := client.DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+	})
+	if err != nil {
+		switch err.(type) {
+		case *serviceerror.NamespaceNotFound:
+			resp.Diagnostics.AddError("Request error", "Namespace not found: "+err.Error())
+			return
+		default:
+			resp.Diagnostics.AddError("Request error", "Unable to delete namespace: "+err.Error())
+		}
+	}
 }
 
 func (r *NamespaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {

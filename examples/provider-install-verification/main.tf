@@ -12,13 +12,15 @@ provider "temporal" {
   token = "dummy"
 }
 
-data "temporal_namespace" "test" {
-  name = "test"
-}
+# data "temporal_namespace" "test" {
+#   name = "test"
+# }
 
 resource "temporal_namespace" "hurma" {
-  name        = "hurma"
-  description = "This is a test description"
+  name                = "hurma"
+  description         = "This is a test description edited"
+  is_global_namespace = false
+  owner_email         = "test123@dif.tech"
 }
 resource "temporal_namespace" "test" {
   name        = "asdf"
@@ -27,9 +29,9 @@ resource "temporal_namespace" "test" {
 output "one_new_namespace" {
   value = temporal_namespace.test
 }
-output "namespace" {
-  value = data.temporal_namespace.test
-}
+# output "namespace" {
+#   value = data.temporal_namespace.test
+# }
 
 output "new_namespace" {
   value = temporal_namespace.hurma

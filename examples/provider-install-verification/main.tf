@@ -22,6 +22,11 @@ resource "temporal_namespace" "hurma" {
   is_global_namespace = false
   owner_email         = "test1233@dif.tech"
 }
+resource "temporal_namespace" "import" {
+  name        = "Hurma"
+  description = "Test Hurma"
+  owner_email = "test@dif.tech"
+}
 resource "temporal_namespace" "test" {
   name        = "asdf"
   description = "This is a test description"

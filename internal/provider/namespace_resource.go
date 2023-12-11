@@ -30,6 +30,7 @@ const (
 
 var (
 	_ resource.Resource                = &NamespaceResource{}
+	_ resource.ResourceWithConfigure   = &NamespaceResource{}
 	_ resource.ResourceWithImportState = &NamespaceResource{}
 )
 
@@ -416,5 +417,5 @@ func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteReque
 }
 
 func (r *NamespaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
-	resource.ImportStatePassthroughID(ctx, path.Root("id"), req, resp)
+	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
 }

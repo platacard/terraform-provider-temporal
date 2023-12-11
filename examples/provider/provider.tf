@@ -1,3 +1,3 @@
-provider "scaffolding" {
+provider "temporal" {
   # example configuration here
 }

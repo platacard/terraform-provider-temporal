@@ -38,10 +38,10 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"host": schema.StringAttribute{
-				Optional: true,
+				Required: true,
 			},
 			"port": schema.StringAttribute{
-				Optional: true,
+				Required: true,
 			},
 		},
 	}

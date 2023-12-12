@@ -1,3 +1,7 @@
+// Package provider implements the Terraform provider for Temporal.
+// It facilitates the management of Temporal resources like namespaces.
+// The provider supports configuration for connection to a Self-Hosted Temporal server.
+
 package provider
 
 import (

@@ -30,7 +30,7 @@ func main() {
 	flag.Parse()
 
 	opts := providerserver.ServeOpts{
-		Address: "hashicorp/ganievs/terraform-provider-temporal",
+		Address: "hashicorp/platacard/terraform-provider-temporal",
 		Debug:   debug,
 	}
 

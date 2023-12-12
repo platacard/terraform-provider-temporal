@@ -1,7 +1,7 @@
 terraform {
   required_providers {
     temporal = {
-      source = "hashicorp.com/ganievs/temporal"
+      source = "hashicorp.com/platacard/temporal"
     }
   }
 }

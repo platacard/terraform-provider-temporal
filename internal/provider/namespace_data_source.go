@@ -3,13 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
-	"regexp"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/path"
-	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
@@ -61,12 +58,6 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 			"name": schema.StringAttribute{
 				MarkdownDescription: "Namespace name",
 				Required:            true,
-				Validators: []validator.String{
-					stringvalidator.RegexMatches(
-						regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`),
-						"must contain only lowercase/uppercase alphanumeric characters, numbers, - and _",
-					),
-				},
 			},
 			"id": schema.StringAttribute{
 				MarkdownDescription: "Namespace identifier",
@@ -79,7 +70,6 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 			"owner_email": schema.StringAttribute{
 				MarkdownDescription: "Namespace Owner Email",
 				Computed:            true,
-				Optional:            true,
 			},
 			"state": schema.StringAttribute{
 				MarkdownDescription: "State of Namespace",

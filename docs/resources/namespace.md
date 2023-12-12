@@ -36,13 +36,13 @@ resource "temporal_namespace" "example" {
 - `is_global_namespace` (Boolean) Namespace is Global
 - `owner_email` (String) Namespace Owner Email
 - `retention` (Number) Workflow Execution retention
+- `visibility_archival_state` (String) Visibility Archival State
+- `visibility_archival_uri` (String) Visibility Archival URI
 
 ### Read-Only
 
 - `clusters` (List of String) Temporal Clusters
 - `id` (String) Namespace identifier
-- `visibility_archival_state` (String) Visibility Archival State
-- `visibility_archival_uri` (String) Visibility Archival URI
 
 ## Import
 

@@ -124,10 +124,12 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			"visibility_archival_state": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival State",
 				Computed:            true,
+				Optional:            true,
 			},
 			"visibility_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival URI",
 				Computed:            true,
+				Optional:            true,
 			},
 			"is_global_namespace": schema.BoolAttribute{
 				MarkdownDescription: "Namespace is Global",

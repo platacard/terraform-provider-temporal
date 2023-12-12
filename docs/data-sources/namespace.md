@@ -26,10 +26,6 @@ data "temporal_namespace" "example" {
 
 - `name` (String) Namespace name
 
-### Optional
-
-- `owner_email` (String) Namespace Owner Email
-
 ### Read-Only
 
 - `active_cluster_name` (String) Active Cluster Name
@@ -40,5 +36,6 @@ data "temporal_namespace" "example" {
 - `history_archival_state` (String) History Archival State
 - `id` (String) Namespace identifier
 - `is_global_namespace` (Boolean) Namespace is Global
+- `owner_email` (String) Namespace Owner Email
 - `state` (String) State of Namespace
 - `visibility_archival_state` (String) Visibility Archival State

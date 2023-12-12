@@ -16,24 +16,29 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+// TemporalProvider implements the provider interface for Temporal.
+// It is used to configure and manage Temporal resources.
 var _ provider.Provider = &TemporalProvider{}
 
-// TemporalProvider defines the provider implementation.
+// TemporalProvider defines the structure for the Temporal provider.
 type TemporalProvider struct {
 	version string
 }
 
-// TemporalProviderModel describes the provider data model.
+// temporalProviderModel defines the configuration structure for the Temporal provider.
+// It includes the host and port for connecting to the Temporal server.
 type temporalProviderModel struct {
 	Host types.String `tfsdk:"host"`
 	Port types.String `tfsdk:"port"`
 }
 
+// Metadata assigns the provider's name and version.
 func (p *TemporalProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
 	resp.TypeName = "temporal"
 	resp.Version = p.version
 }
 
+// Schema defines the configuration schema for the provider.
 func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
@@ -47,6 +52,8 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 	}
 }
 
+// Configure sets up the provider with the given configuration.
+// It validates the config and initializes the Temporal client connection.
 func (p *TemporalProvider) Configure(ctx context.Context, req provider.ConfigureRequest, resp *provider.ConfigureResponse) {
 	tflog.Info(ctx, "Configuring Temporal client")
 
@@ -150,18 +157,22 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	tflog.Info(ctx, "Configured Temporal client", map[string]any{"success": true})
 }
 
+// Resources returns a list of resource types managed by this provider.
 func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewNamespaceResource,
 	}
 }
 
+// DataSources returns a list of data source types managed by this provider.
 func (p *TemporalProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewNamespaceDataSource,
 	}
 }
 
+// New is a constructor for the TemporalProvider.
+// It takes a version string and returns a new TemporalProvider.
 func New(version string) func() provider.Provider {
 	return func() provider.Provider {
 		return &TemporalProvider{

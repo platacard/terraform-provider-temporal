@@ -14,22 +14,24 @@ import (
 	"google.golang.org/grpc"
 )
 
-// Ensure provider defined types fully satisfy framework interfaces.
+// Ensures that NamespaceDataSource fully satisfies the datasource.DataSource and
+// datasource.DataSourceWithConfigure interfaces.
 var (
 	_ datasource.DataSource              = &NamespaceDataSource{}
 	_ datasource.DataSourceWithConfigure = &NamespaceDataSource{}
 )
 
+// NewNamespaceDataSource returns a new instance of the NamespaceDataSource.
 func NewNamespaceDataSource() datasource.DataSource {
 	return &NamespaceDataSource{}
 }
 
-// NamespaceDataSource defines the data source implementation.
+// NamespaceDataSource implements the Terraform data source interface for Temporal namespaces.
 type NamespaceDataSource struct {
 	client workflowservice.WorkflowServiceClient
 }
 
-// NamespaceDataSourceModel describes the data source data model.
+// NamespaceDataSourceModel defines the structure for the data source's configuration and read data.
 type NamespaceDataSourceModel struct {
 	Name                    string   `tfsdk:"name"`
 	Id                      string   `tfsdk:"id"`
@@ -45,10 +47,12 @@ type NamespaceDataSourceModel struct {
 	FailoverHistory         []string `tfsdk:"failover_history"`
 }
 
+// Metadata sets the metadata for the Temporal namespace data source, specifically the type name.
 func (d *NamespaceDataSource) Metadata(ctx context.Context, req datasource.MetadataRequest, resp *datasource.MetadataResponse) {
 	resp.TypeName = req.ProviderTypeName + "_namespace"
 }
 
+// Schema defines the schema for the Temporal namespace data source.
 func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
@@ -109,6 +113,7 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 	}
 }
 
+// Configure sets up the namespace data source configuration.
 func (d *NamespaceDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	tflog.Info(ctx, "Configuring Temporal Namespace DataSource")
 
@@ -133,6 +138,7 @@ func (d *NamespaceDataSource) Configure(ctx context.Context, req datasource.Conf
 	tflog.Info(ctx, "Configured Temporal Namespace client", map[string]any{"success": true})
 }
 
+// Read fetches data from a Temporal namespace and sets it in the Terraform state.
 func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	tflog.Info(ctx, "Reading Temporal Namespace Info")
 

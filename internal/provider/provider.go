@@ -25,9 +25,8 @@ type TemporalProvider struct {
 
 // TemporalProviderModel describes the provider data model.
 type temporalProviderModel struct {
-	Host  types.String `tfsdk:"host"`
-	Port  types.String `tfsdk:"port"`
-	Token types.String `tfsdk:"token"`
+	Host types.String `tfsdk:"host"`
+	Port types.String `tfsdk:"port"`
 }
 
 func (p *TemporalProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
@@ -42,9 +41,6 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 				Optional: true,
 			},
 			"port": schema.StringAttribute{
-				Optional: true,
-			},
-			"token": schema.StringAttribute{
 				Optional: true,
 			},
 		},
@@ -83,25 +79,14 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		)
 	}
 
-	if config.Token.IsUnknown() {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("token"),
-			"Unknown Temporal Auth Token",
-			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Temporal Auth Token. "+
-				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_TOKEN environment variable.",
-		)
-	}
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
 	// Default values to environment variables, but override
 	// with Terraform configuration value if set.
-
 	host := os.Getenv("TEMPORAL_HOST")
 	port := os.Getenv("TEMPORAL_PORT")
-	token := os.Getenv("TEMPORAL_TOKEN")
 
 	if !config.Host.IsNull() {
 		host = config.Host.ValueString()
@@ -111,13 +96,8 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		port = config.Port.ValueString()
 	}
 
-	if !config.Token.IsNull() {
-		token = config.Token.ValueString()
-	}
-
 	// If any of the expected configurations are missing, return
 	// errors with provider-specific guidance.
-
 	if host == "" {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("host"),
@@ -138,16 +118,6 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		)
 	}
 
-	if token == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("token"),
-			"Missing Temporal Auth Token",
-			"The provider cannot create the Temporal API client as there is a missing or empty value for the Temporal Auth Token. "+
-				"Set the password value in the configuration or use the TEMPORAL_TOKEN environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
-	}
-
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -156,8 +126,6 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	// jwtCreds := strings.Join([]string{"Bearer", token}, " ")
 	ctx = tflog.SetField(ctx, "temporal_host", host)
 	ctx = tflog.SetField(ctx, "temporal_port", port)
-	ctx = tflog.SetField(ctx, "temporal_token", token)
-	ctx = tflog.MaskFieldValuesWithFieldKeys(ctx, "temporal_token")
 
 	tflog.Debug(ctx, "Creating Temporal client")
 

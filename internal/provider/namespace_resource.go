@@ -110,6 +110,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "History Archival State",
 				Computed:            true,
 				Optional:            true,
+				Default:             stringdefault.StaticString("Disabled"),
 			},
 			"history_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "History Archival URI",
@@ -120,6 +121,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Visibility Archival State",
 				Computed:            true,
 				Optional:            true,
+				Default:             stringdefault.StaticString("Disabled"),
 			},
 			"visibility_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival URI",
@@ -240,6 +242,8 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		return
 	}
 
+	tflog.Trace(ctx, "read a Temporal Namespace resource")
+
 	data = NamespaceResourceModel{
 		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
@@ -253,13 +257,6 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
 	}
-
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace, got error: %s", err))
-		return
-	}
-
-	tflog.Trace(ctx, "read a Temporal Namespace resource")
 
 	// Set refreshed state
 	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)

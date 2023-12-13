@@ -26,6 +26,7 @@ resource "temporal_namespace" "example" {
 ### Required
 
 - `name` (String) Namespace name
+- `owner_email` (String) Namespace Owner Email
 
 ### Optional
 
@@ -34,7 +35,6 @@ resource "temporal_namespace" "example" {
 - `history_archival_state` (String) History Archival State
 - `history_archival_uri` (String) History Archival URI
 - `is_global_namespace` (Boolean) Namespace is Global
-- `owner_email` (String) Namespace Owner Email
 - `retention` (Number) Workflow Execution retention
 - `visibility_archival_state` (String) Visibility Archival State
 - `visibility_archival_uri` (String) Visibility Archival URI

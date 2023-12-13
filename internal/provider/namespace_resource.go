@@ -91,9 +91,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			},
 			"owner_email": schema.StringAttribute{
 				MarkdownDescription: "Namespace Owner Email",
-				Optional:            true,
-				Computed:            true,
-				Default:             stringdefault.StaticString(""),
+				Required:            true,
 			},
 			"retention": schema.Int64Attribute{
 				MarkdownDescription: "Workflow Execution retention",
@@ -300,7 +298,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		PromoteNamespace: data.IsGlobalNamespace.ValueBool(),
 	}
 
-	_, err := client.UpdateNamespace(ctx, request)
+	ns, err := client.UpdateNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
@@ -313,14 +311,6 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
-
-	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: data.Name.ValueString(),
-	})
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
-		return
-	}
 
 	data = NamespaceResourceModel{
 		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),

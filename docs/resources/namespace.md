@@ -41,7 +41,6 @@ resource "temporal_namespace" "example" {
 
 ### Read-Only
 
-- `clusters` (List of String) Temporal Clusters
 - `id` (String) Namespace identifier
 
 ## Import

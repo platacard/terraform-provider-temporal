@@ -26,16 +26,18 @@ data "temporal_namespace" "example" {
 
 - `name` (String) Namespace name
 
+### Optional
+
+- `history_archival_uri` (String) History Archival URI
+- `visibility_archival_uri` (String) Visibility Archival URI
+
 ### Read-Only
 
 - `active_cluster_name` (String) Active Cluster Name
-- `clusters` (List of String) Temporal Clusters
 - `description` (String) Namespace Description
-- `failover_history` (List of String) Failover History
-- `failover_version` (Number) Failover Version
 - `history_archival_state` (String) History Archival State
 - `id` (String) Namespace identifier
 - `is_global_namespace` (Boolean) Namespace is Global
 - `owner_email` (String) Namespace Owner Email
-- `state` (String) State of Namespace
+- `retention` (Number) Workflow Execution retention
 - `visibility_archival_state` (String) Visibility Archival State

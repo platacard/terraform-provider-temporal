@@ -197,10 +197,9 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
 			return
-		} else {
-			resp.Diagnostics.AddError(data.Name.ValueString(), "namespace is already registered: "+err.Error())
-			return
 		}
+		resp.Diagnostics.AddError(data.Name.ValueString(), "namespace is already registered: "+err.Error())
+		return
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))

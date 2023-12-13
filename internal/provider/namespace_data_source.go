@@ -151,8 +151,7 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 
 	tflog.Trace(ctx, "read a data source")
 
-	var data *NamespaceDataSourceModel
-	data = &NamespaceDataSourceModel{
+	data := &NamespaceDataSourceModel{
 		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),

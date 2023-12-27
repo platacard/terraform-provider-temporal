@@ -190,6 +190,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		HistoryArchivalUri:               data.HistoryArchivalUri.ValueString(),
 		IsGlobalNamespace:                data.IsGlobalNamespace.ValueBool(),
 	}
+
 	_, err := client.RegisterNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
@@ -224,17 +225,17 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 // Read is responsible for reading the current state of a Temporal namespace.
 // It fetches the current configuration of the namespace and updates the Terraform state.
 func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
-	var data NamespaceResourceModel
+	var state NamespaceResourceModel
 
 	client := workflowservice.NewWorkflowServiceClient(r.client)
 
 	// Read Terraform prior state data into the model
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: data.Name.ValueString(),
+		Namespace: state.Name.ValueString(),
 	})
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
@@ -243,9 +244,9 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	tflog.Trace(ctx, "read a Temporal Namespace resource")
 
-	data = NamespaceResourceModel{
-		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
+	data := &NamespaceResourceModel{
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
+		Name:                    state.Name,
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
 		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
@@ -258,7 +259,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 	}
 
 	// Set refreshed state
-	resp.Diagnostics.Append(req.State.Get(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -309,25 +310,14 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		}
 	}
 
+	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
+	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
+
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 
-	data = NamespaceResourceModel{
-		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
-		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
-		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
-		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
-		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
-		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
-		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
-		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
-		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
-		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
-	}
-
 	// Save data into Terraform state
-	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
+	resp.Diagnostics.Append(resp.State.Set(ctx, data)...)
 	if resp.Diagnostics.HasError() {
 		return
 	}

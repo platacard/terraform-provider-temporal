@@ -6,7 +6,7 @@ testacc:
 
 .PHONY: build
 build:
-	go build -o bin/temporal-provider-temporal .
+	go build -o bin/terraform-provider-temporal .
 
 .PHONY: install
 install:

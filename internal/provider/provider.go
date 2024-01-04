@@ -6,18 +6,24 @@ package provider
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/clientcredentials"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 // TemporalProvider implements the provider interface for Temporal.
@@ -32,8 +38,12 @@ type TemporalProvider struct {
 // temporalProviderModel defines the configuration structure for the Temporal provider.
 // It includes the host and port for connecting to the Temporal server.
 type temporalProviderModel struct {
-	Host types.String `tfsdk:"host"`
-	Port types.String `tfsdk:"port"`
+	Host         types.String `tfsdk:"host"`
+	Port         types.String `tfsdk:"port"`
+	ClientSecret types.String `tfsdk:"client_secret"`
+	ClientID     types.String `tfsdk:"client_id"`
+	TokenURL     types.String `tfsdk:"token_url"`
+	Audience     types.String `tfsdk:"audience"`
 }
 
 // Metadata assigns the provider's name and version.
@@ -47,10 +57,45 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
 			"host": schema.StringAttribute{
-				Required: true,
+				Description: "The Temporal server host.",
+				Optional:    true,
 			},
 			"port": schema.StringAttribute{
-				Required: true,
+				Description: "The Temporal server port.",
+				Optional:    true,
+			},
+			"token_url": schema.StringAttribute{
+				Optional:    true,
+				Description: "Oauth2 server URL to fetch token from",
+				Validators: []validator.String{
+					stringvalidator.AlsoRequires(path.MatchRoot("client_id")),
+					stringvalidator.AlsoRequires(path.MatchRoot("client_secret")),
+				},
+			},
+			"client_id": schema.StringAttribute{
+				Optional:    true,
+				Description: "The OAuth2 Client ID for API operations.",
+				Validators: []validator.String{
+					stringvalidator.AlsoRequires(path.MatchRoot("client_secret")),
+					stringvalidator.AlsoRequires(path.MatchRoot("token_url")),
+				},
+			},
+			"client_secret": schema.StringAttribute{
+				Optional:    true,
+				Description: "The OAuth2 Client Secret for API operations.",
+				Validators: []validator.String{
+					stringvalidator.AlsoRequires(path.MatchRoot("token_url")),
+					stringvalidator.AlsoRequires(path.MatchRoot("client_id")),
+				},
+			},
+			"audience": schema.StringAttribute{
+				Optional:    true,
+				Description: "Audience of the token.",
+				Validators: []validator.String{
+					stringvalidator.AlsoRequires(path.MatchRoot("client_id")),
+					stringvalidator.AlsoRequires(path.MatchRoot("client_secret")),
+					stringvalidator.AlsoRequires(path.MatchRoot("token_url")),
+				},
 			},
 		},
 	}
@@ -71,7 +116,6 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 	// If practitioner provided a configuration value for any of the
 	// attributes, it must be a known value.
-
 	if config.Host.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("host"),
@@ -90,6 +134,38 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		)
 	}
 
+	if config.ClientID.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("client_id"),
+			"Unknown Temporal Client ID",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Temporal API Client ID. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_CLIENT_ID environment variable.",
+		)
+	}
+	if config.ClientSecret.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("client_secret"),
+			"Unknown Temporal Client Secret",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Temporal API Client Secret. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_CLIENT_SECRET environment variable.",
+		)
+	}
+	if config.TokenURL.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("token_url"),
+			"Unknown Oauth2 Token URL",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Oauth2 Token URL. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_TOKEN_URL environment variable.",
+		)
+	}
+	if config.Audience.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("audience"),
+			"Unknown Audience",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Oauth2 Client Audience. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_AUDIENCE environment variable.",
+		)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -98,6 +174,10 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	// with Terraform configuration value if set.
 	host := os.Getenv("TEMPORAL_HOST")
 	port := os.Getenv("TEMPORAL_PORT")
+	tokenURL := os.Getenv("TEMPORAL_TOKEN_URL")
+	clientID := os.Getenv("TEMPORAL_CLIENT_ID")
+	clientSecret := os.Getenv("TEMPORAL_CLIENT_SECRET")
+	audience := os.Getenv("TEMPORAL_AUDIENCE")
 
 	if !config.Host.IsNull() {
 		host = config.Host.ValueString()
@@ -107,41 +187,39 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		port = config.Port.ValueString()
 	}
 
-	// If any of the expected configurations are missing, return
-	// errors with provider-specific guidance.
+	if !config.TokenURL.IsNull() {
+		tokenURL = config.TokenURL.ValueString()
+	}
+	if !config.ClientID.IsNull() {
+		clientID = config.ClientID.ValueString()
+	}
+	if !config.ClientSecret.IsNull() {
+		clientSecret = config.ClientSecret.ValueString()
+	}
+	if !config.Audience.IsNull() {
+		audience = config.Audience.ValueString()
+	}
+
+	// If host and port not set use defaults
 	if host == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("host"),
-			"Missing Temporal Frontend Host",
-			"The provider cannot create the Temporal API client as there is a missing or empty value for the Temporal Frontend host. "+
-				"Set the host value in the configuration or use the TEMPORAL_HOST environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
+		host = "127.0.0.1"
 	}
 
 	if port == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root("port"),
-			"Missing Temporal Frontend Port",
-			"The provider cannot create the Temporal API client as there is a missing or empty value for the Temporal Frontend port. "+
-				"Set the username value in the configuration or use the TEMPORAL_PORT environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
+		port = "7233"
 	}
 
-	if resp.Diagnostics.HasError() {
-		return
+	if audience == "" {
+		audience = "openid,profile,email"
 	}
 
 	// Create a new Temporal client using the configuration values
-	// jwtCreds := strings.Join([]string{"Bearer", token}, " ")
 	ctx = tflog.SetField(ctx, "temporal_host", host)
 	ctx = tflog.SetField(ctx, "temporal_port", port)
+	endpoint := strings.Join([]string{host, port}, ":")
 
 	tflog.Debug(ctx, "Creating Temporal client")
-
-	endpoint := strings.Join([]string{host, port}, ":")
-	client, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -151,7 +229,6 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		)
 		return
 	}
-	// connection, err := grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, "")), grpcMetadata.New(map[string]string{"authorization": jwtCreds}))
 
 	// Make the Temporal client available during DataSource and Resource
 	// type Configure methods.
@@ -183,4 +260,50 @@ func New(version string) func() provider.Provider {
 			version: version,
 		}
 	}
+}
+
+// GetToken retrieves an OAuth token using client credentials.
+func GetToken(clientID, clientSecret, tokenURL, audience string) (*oauth2.Token, error) {
+	credentials := clientcredentials.Config{
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+		TokenURL:     tokenURL,
+		Scopes:       strings.Split(audience, ","),
+	}
+
+	token, err := credentials.Token(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve token: %v", err)
+	}
+
+	return token, nil
+}
+
+// CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
+func CreateAuthenticatedClient(endpoint string, token *oauth2.Token) (*grpc.ClientConn, error) {
+	return grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(
+		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
+			return invoker(newCtx, method, req, reply, cc, opts...)
+		},
+	))
+}
+
+// CreateInsecureClient creates a gRPC client without any authentication.
+func CreateInsecureClient(endpoint string) (*grpc.ClientConn, error) {
+	return grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+}
+
+// CreateGRPCClient decides which gRPC client to create based on clientID.
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string) (*grpc.ClientConn, error) {
+	if clientID != "" {
+		token, err := GetToken(clientID, clientSecret, tokenURL, audience)
+		if err != nil {
+			return nil, err
+		}
+
+		return CreateAuthenticatedClient(endpoint, token)
+	}
+
+	return CreateInsecureClient(endpoint)
 }

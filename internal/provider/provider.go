@@ -6,8 +6,10 @@ package provider
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
@@ -22,7 +24,8 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	grpcCreds "google.golang.org/grpc/credentials"
+	grpcInsec "google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -44,6 +47,7 @@ type temporalProviderModel struct {
 	ClientID     types.String `tfsdk:"client_id"`
 	TokenURL     types.String `tfsdk:"token_url"`
 	Audience     types.String `tfsdk:"audience"`
+	Insecure     types.Bool   `tfsdk:"insecure"`
 }
 
 // Metadata assigns the provider's name and version.
@@ -96,6 +100,10 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 					stringvalidator.AlsoRequires(path.MatchRoot("client_secret")),
 					stringvalidator.AlsoRequires(path.MatchRoot("token_url")),
 				},
+			},
+			"insecure": schema.BoolAttribute{
+				Optional:    true,
+				Description: "Use insecure connection",
 			},
 		},
 	}
@@ -166,6 +174,14 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_AUDIENCE environment variable.",
 		)
 	}
+	if config.Insecure.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("insecure"),
+			"Unknown Insecure",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Insecure option. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_INSECURE environment variable.",
+		)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -178,7 +194,19 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	clientID := os.Getenv("TEMPORAL_CLIENT_ID")
 	clientSecret := os.Getenv("TEMPORAL_CLIENT_SECRET")
 	audience := os.Getenv("TEMPORAL_AUDIENCE")
+	insecure, err := getBoolEnv("TEMPORAL_INSECURE")
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("insecure"),
+			"Unknown Insecure",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the Insecure option. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_INSECURE environment variable.",
+		)
+	}
 
+	if resp.Diagnostics.HasError() {
+		return
+	}
 	if !config.Host.IsNull() {
 		host = config.Host.ValueString()
 	}
@@ -198,6 +226,9 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	}
 	if !config.Audience.IsNull() {
 		audience = config.Audience.ValueString()
+	}
+	if !config.Insecure.IsNull() {
+		insecure = config.Insecure.ValueBool()
 	}
 
 	// If host and port not set use defaults
@@ -219,7 +250,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	endpoint := strings.Join([]string{host, port}, ":")
 
 	tflog.Debug(ctx, "Creating Temporal client")
-	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint)
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -264,14 +295,14 @@ func New(version string) func() provider.Provider {
 
 // GetToken retrieves an OAuth token using client credentials.
 func GetToken(clientID, clientSecret, tokenURL, audience string) (*oauth2.Token, error) {
-	credentials := clientcredentials.Config{
+	clientCredentials := clientcredentials.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		TokenURL:     tokenURL,
 		Scopes:       strings.Split(audience, ","),
 	}
 
-	token, err := credentials.Token(context.Background())
+	token, err := clientCredentials.Token(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve token: %v", err)
 	}
@@ -280,8 +311,8 @@ func GetToken(clientID, clientSecret, tokenURL, audience string) (*oauth2.Token,
 }
 
 // CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
-func CreateAuthenticatedClient(endpoint string, token *oauth2.Token) (*grpc.ClientConn, error) {
-	return grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithUnaryInterceptor(
+func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials), grpc.WithUnaryInterceptor(
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
 			return invoker(newCtx, method, req, reply, cc, opts...)
@@ -290,20 +321,41 @@ func CreateAuthenticatedClient(endpoint string, token *oauth2.Token) (*grpc.Clie
 }
 
 // CreateInsecureClient creates a gRPC client without any authentication.
-func CreateInsecureClient(endpoint string) (*grpc.ClientConn, error) {
-	return grpc.Dial(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
+func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.
-func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string) (*grpc.ClientConn, error) {
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool) (*grpc.ClientConn, error) {
+	var credentials grpcCreds.TransportCredentials
+	switch insecure {
+	case true:
+		credentials = grpcInsec.NewCredentials()
+	case false:
+		config := &tls.Config{}
+		credentials = grpcCreds.NewTLS(config)
+	}
+
 	if clientID != "" {
 		token, err := GetToken(clientID, clientSecret, tokenURL, audience)
 		if err != nil {
 			return nil, err
 		}
 
-		return CreateAuthenticatedClient(endpoint, token)
+		return CreateAuthenticatedClient(endpoint, token, credentials)
 	}
 
-	return CreateInsecureClient(endpoint)
+	return CreateInsecureClient(endpoint, credentials)
+}
+
+func getBoolEnv(key string) (result bool, err error) {
+	val, exist := os.LookupEnv(key)
+	if !exist {
+		return false, err
+	}
+	result, err = strconv.ParseBool(val)
+	if err != nil {
+		return false, err
+	}
+	return result, err
 }

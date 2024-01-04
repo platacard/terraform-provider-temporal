@@ -28,5 +28,6 @@ provider "temporal" {
 - `client_id` (String) The OAuth2 Client ID for API operations.
 - `client_secret` (String) The OAuth2 Client Secret for API operations.
 - `host` (String) The Temporal server host.
+- `insecure` (Boolean) Use insecure connection
 - `port` (String) The Temporal server port.
 - `token_url` (String) Oauth2 server URL to fetch token from

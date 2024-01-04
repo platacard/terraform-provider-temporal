@@ -5,10 +5,12 @@ go 1.20
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.16.0
 	github.com/hashicorp/terraform-plugin-framework v1.4.2
+	github.com/hashicorp/terraform-plugin-framework-validators v0.12.0
 	github.com/hashicorp/terraform-plugin-go v0.20.0
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-testing v1.6.0
 	go.temporal.io/api v1.26.0
+	golang.org/x/oauth2 v0.13.0
 	google.golang.org/grpc v1.60.1
 )
 

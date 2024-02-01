@@ -10,8 +10,8 @@ require (
 	github.com/hashicorp/terraform-plugin-log v0.9.0
 	github.com/hashicorp/terraform-plugin-testing v1.6.0
 	go.temporal.io/api v1.26.0
-	golang.org/x/oauth2 v0.13.0
-	google.golang.org/grpc v1.60.1
+	golang.org/x/oauth2 v0.14.0
+	google.golang.org/grpc v1.61.0
 )
 
 require (
@@ -30,7 +30,7 @@ require (
 	github.com/gogo/status v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
-	github.com/google/uuid v1.3.1 // indirect
+	github.com/google/uuid v1.4.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-checkpoint v0.5.0 // indirect

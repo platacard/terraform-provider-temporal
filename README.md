@@ -19,7 +19,7 @@ go install
 
 ## Using the provider
 
-Usage examples can be found in the Terraform provider documentation
+Usage examples can be found in the Terraform provider [documentation](https://registry.terraform.io/providers/platacard/temporal/latest/docs)
 
 ## Developing the Provider
 

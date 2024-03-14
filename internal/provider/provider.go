@@ -66,17 +66,17 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 			"tls": schema.SingleNestedBlock{
 				Description: "TLS Configuration for the Temporal server",
 				Attributes: map[string]schema.Attribute{
-					"cert_file": schema.StringAttribute{
+					"cert": schema.StringAttribute{
 						Optional:    true,
-						Description: "Path to the client certificate file",
+						Description: "Client certificate PEM",
 					},
-					"key_file": schema.StringAttribute{
+					"key": schema.StringAttribute{
 						Optional:    true,
-						Description: "Path to the client private key file",
+						Description: "Private key PEM",
 					},
-					"ca_certs": schema.StringAttribute{
+					"ca": schema.StringAttribute{
 						Optional:    true,
-						Description: "Path to the CA certificates file",
+						Description: "CA certificates",
 					},
 					"cert_reload_time": schema.Int64Attribute{
 						Optional:    true,
@@ -262,8 +262,8 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	}
 
 	var (
-		certFile   string
-		keyFile    string
+		certString string
+		keyString  string
 		caCerts    string
 		serverName string
 	)
@@ -275,9 +275,9 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 		tlsAttributes := config.TLS.Attributes()
 
-		certFile = normalizeCert(tlsAttributes["cert_file"].String())
-		keyFile = normalizeCert(tlsAttributes["key_file"].String())
-		caCerts = normalizeCert(tlsAttributes["ca_certs"].String())
+		certString = normalizeCert(tlsAttributes["cert"].String())
+		keyString = normalizeCert(tlsAttributes["key"].String())
+		caCerts = normalizeCert(tlsAttributes["ca"].String())
 		serverName = stripQuotes(tlsAttributes["server_name"].String())
 	}
 
@@ -301,7 +301,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 	tflog.Debug(ctx, "Creating Temporal client")
 	tflog.Debug(ctx, "Use TLS? "+strconv.FormatBool(useTLS))
-	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure, useTLS, certFile, keyFile, caCerts, serverName)
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -382,7 +382,7 @@ func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCreden
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.
-func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool, useTLS bool, certFile string, keyFile string, caCerts string, serverName string) (*grpc.ClientConn, error) {
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string) (*grpc.ClientConn, error) {
 	var credentials grpcCreds.TransportCredentials
 
 	switch insecure {
@@ -392,13 +392,13 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 		switch useTLS {
 		case true:
 			// Parse the certificate from PEM format
-			cert, err := getCertificate(certFile)
+			cert, err := getCertificate(certString)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse certificate: %v", err)
 			}
 
 			// Parse the private key from PEM format
-			key, err := getPrivateKey([]byte(keyFile))
+			key, err := getPrivateKey([]byte(keyString))
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse private key: %v", err)
 			}

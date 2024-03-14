@@ -1,8 +1,7 @@
 terraform {
   required_providers {
     temporal = {
-      source = "platacard/temporal",
-      version = "0.2.0"
+      source = "platacard/temporal"
     }
   }
 }
@@ -13,9 +12,9 @@ provider "temporal" {
   
   # Add certs for mTLS auth.
   tls {
-    cert_file = sensitive(file("path/to/cert.pem"))
-    key_file  = sensitive(file("path/to/key.pem"))
-    ca_certs = sensitive(file("path/to/cacerts.pem"))
+    cert = sensitive(file("path/to/cert.pem"))
+    key  = sensitive(file("path/to/key.pem"))
+    ca = sensitive(file("path/to/cacerts.pem"))
     server_name = "server-name"
   }
 }

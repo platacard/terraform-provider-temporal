@@ -40,6 +40,6 @@ Optional:
 
 - `ca` (String) CA certificates
 - `cert` (String) Client certificate PEM
-- `cert_reload_time` (Number) Certificate reload time. Future use.
+- `cert_reload_time` (Number) Certificate reload time
 - `key` (String) Private key PEM
 - `server_name` (String) Used to verify the hostname and included in handshake

@@ -435,7 +435,7 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 	return CreateInsecureClient(endpoint, credentials)
 }
 
-// Function to parse the public key from PEM format
+// Function to parse the public key from PEM format.
 func getCertificate(certPEM string) (*x509.Certificate, error) {
 	block, _ := pem.Decode([]byte(certPEM))
 
@@ -451,7 +451,7 @@ func getCertificate(certPEM string) (*x509.Certificate, error) {
 	return cert, nil
 }
 
-// Function to parse the private key from PEM format
+// Function to parse the private key from PEM format.
 func getPrivateKey(keyPEM []byte) (interface{}, error) {
 	block, _ := pem.Decode(keyPEM)
 	if block == nil {
@@ -471,7 +471,7 @@ func getPrivateKey(keyPEM []byte) (interface{}, error) {
 	return key, nil
 }
 
-// Function to get CA certificates
+// Function to get CA certificates.
 func getCA(caCerts []byte) *x509.CertPool {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCerts)

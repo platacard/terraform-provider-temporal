@@ -7,6 +7,8 @@ package provider
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"fmt"
 	"os"
 	"strconv"
@@ -48,6 +50,7 @@ type temporalProviderModel struct {
 	TokenURL     types.String `tfsdk:"token_url"`
 	Audience     types.String `tfsdk:"audience"`
 	Insecure     types.Bool   `tfsdk:"insecure"`
+	TLS          types.Object `tfsdk:"tls"`
 }
 
 // Metadata assigns the provider's name and version.
@@ -59,6 +62,33 @@ func (p *TemporalProvider) Metadata(ctx context.Context, req provider.MetadataRe
 // Schema defines the configuration schema for the provider.
 func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaRequest, resp *provider.SchemaResponse) {
 	resp.Schema = schema.Schema{
+		Blocks: map[string]schema.Block{
+			"tls": schema.SingleNestedBlock{
+				Description: "TLS Configuration for the Temporal server",
+				Attributes: map[string]schema.Attribute{
+					"cert": schema.StringAttribute{
+						Optional:    true,
+						Description: "Client certificate PEM",
+					},
+					"key": schema.StringAttribute{
+						Optional:    true,
+						Description: "Private key PEM",
+					},
+					"ca": schema.StringAttribute{
+						Optional:    true,
+						Description: "CA certificates",
+					},
+					"cert_reload_time": schema.Int64Attribute{
+						Optional:    true,
+						Description: "Certificate reload time",
+					},
+					"server_name": schema.StringAttribute{
+						Optional:    true,
+						Description: "Used to verify the hostname and included in handshake",
+					},
+				},
+			},
+		},
 		Attributes: map[string]schema.Attribute{
 			"host": schema.StringAttribute{
 				Description: "The Temporal server host.",
@@ -231,6 +261,26 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		insecure = config.Insecure.ValueBool()
 	}
 
+	var (
+		certString string
+		keyString  string
+		caCerts    string
+		serverName string
+	)
+
+	var useTLS bool = false
+
+	if !config.TLS.IsNull() {
+		useTLS = true
+
+		tlsAttributes := config.TLS.Attributes()
+
+		certString = normalizeCert(tlsAttributes["cert"].String())
+		keyString = normalizeCert(tlsAttributes["key"].String())
+		caCerts = normalizeCert(tlsAttributes["ca"].String())
+		serverName = stripQuotes(tlsAttributes["server_name"].String())
+	}
+
 	// If host and port not set use defaults
 	if host == "" {
 		host = "127.0.0.1"
@@ -250,7 +300,8 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	endpoint := strings.Join([]string{host, port}, ":")
 
 	tflog.Debug(ctx, "Creating Temporal client")
-	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure)
+	tflog.Debug(ctx, "Use TLS? "+strconv.FormatBool(useTLS))
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -320,20 +371,54 @@ func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials
 	))
 }
 
+// CreateSecureClient creates a gRPC client using mTLS without OAuth authentication.
+func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
+}
+
 // CreateInsecureClient creates a gRPC client without any authentication.
 func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
 	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.
-func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool) (*grpc.ClientConn, error) {
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string) (*grpc.ClientConn, error) {
 	var credentials grpcCreds.TransportCredentials
+
 	switch insecure {
 	case true:
 		credentials = grpcInsec.NewCredentials()
 	case false:
-		config := &tls.Config{}
-		credentials = grpcCreds.NewTLS(config)
+		switch useTLS {
+		case true:
+			// Parse the certificate from PEM format
+			cert, err := getCertificate(certString)
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse certificate: %v", err)
+			}
+
+			// Parse the private key from PEM format
+			key, err := getPrivateKey([]byte(keyString))
+			if err != nil {
+				return nil, fmt.Errorf("failed to parse private key: %v", err)
+			}
+
+			// Create a tls.Certificate from the parsed certificate and private key
+			tlsCert := tls.Certificate{
+				Certificate: [][]byte{cert.Raw},
+				PrivateKey:  key,
+			}
+
+			config := &tls.Config{
+				Certificates: []tls.Certificate{tlsCert},
+				RootCAs:      getCA([]byte(caCerts)),
+				ServerName:   serverName,
+			}
+			credentials = grpcCreds.NewTLS(config)
+		case false:
+			config := &tls.Config{}
+			credentials = grpcCreds.NewTLS(config)
+		}
 	}
 
 	if clientID != "" {
@@ -343,9 +428,54 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 		}
 
 		return CreateAuthenticatedClient(endpoint, token, credentials)
+	} else if useTLS {
+		return CreateSecureClient(endpoint, credentials)
 	}
 
 	return CreateInsecureClient(endpoint, credentials)
+}
+
+// Function to parse the public key from PEM format.
+func getCertificate(certPEM string) (*x509.Certificate, error) {
+	block, _ := pem.Decode([]byte(certPEM))
+
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode cert PEM. certPEM bytes:\n%v", []byte(certPEM))
+	}
+
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %v", err)
+	}
+
+	return cert, nil
+}
+
+// Function to parse the private key from PEM format.
+func getPrivateKey(keyPEM []byte) (interface{}, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode private key PEM")
+	}
+
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		// If parsing as PKCS1 fails, try parsing as PKCS8
+		pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse private key: %v", err)
+		}
+		return pkcs8Key, nil
+	}
+
+	return key, nil
+}
+
+// Function to get CA certificates.
+func getCA(caCerts []byte) *x509.CertPool {
+	caCertPool := x509.NewCertPool()
+	caCertPool.AppendCertsFromPEM(caCerts)
+	return caCertPool
 }
 
 func getBoolEnv(key string) (result bool, err error) {
@@ -358,4 +488,14 @@ func getBoolEnv(key string) (result bool, err error) {
 		return false, err
 	}
 	return result, err
+}
+
+// Helper function to strip quotes and remove line return escaping from cert.
+func normalizeCert(value string) string {
+	return strings.Replace(stripQuotes(value), "\\n", "\n", -1)
+}
+
+// Helper function to strip quotes from string.
+func stripQuotes(value string) string {
+	return strings.TrimPrefix(strings.TrimSuffix(value, "\""), "\"")
 }

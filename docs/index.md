@@ -30,4 +30,16 @@ provider "temporal" {
 - `host` (String) The Temporal server host.
 - `insecure` (Boolean) Use insecure connection
 - `port` (String) The Temporal server port.
+- `tls` (Block, Optional) TLS Configuration for the Temporal server (see [below for nested schema](#nestedblock--tls))
 - `token_url` (String) Oauth2 server URL to fetch token from
+
+<a id="nestedblock--tls"></a>
+### Nested Schema for `tls`
+
+Optional:
+
+- `ca` (String) CA certificates
+- `cert` (String) Client certificate PEM
+- `cert_reload_time` (Number) Certificate reload time
+- `key` (String) Private key PEM
+- `server_name` (String) Used to verify the hostname and included in handshake

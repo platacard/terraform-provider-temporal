@@ -278,7 +278,10 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		certString = normalizeCert(tlsAttributes["cert"].String())
 		keyString = normalizeCert(tlsAttributes["key"].String())
 		caCerts = normalizeCert(tlsAttributes["ca"].String())
-		serverName = stripQuotes(tlsAttributes["server_name"].String())
+
+		if !tlsAttributes["server_name"].IsNull() {
+			serverName = stripQuotes(tlsAttributes["server_name"].String())
+		}
 	}
 
 	// If host and port not set use defaults
@@ -373,6 +376,7 @@ func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials
 
 // CreateSecureClient creates a gRPC client using mTLS without OAuth authentication.
 func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+	//return nil, fmt.Errorf("about to dial with transport credentials")
 	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
 }
 
@@ -412,8 +416,12 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 			config := &tls.Config{
 				Certificates: []tls.Certificate{tlsCert},
 				RootCAs:      getCA([]byte(caCerts)),
-				ServerName:   serverName,
 			}
+
+			if len(serverName) > 0 {
+				config.ServerName = serverName
+			}
+
 			credentials = grpcCreds.NewTLS(config)
 		case false:
 			config := &tls.Config{}

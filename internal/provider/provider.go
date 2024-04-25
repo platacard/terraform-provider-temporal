@@ -375,7 +375,6 @@ func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials
 
 // CreateSecureClient creates a gRPC client using mTLS without OAuth authentication.
 func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	//return nil, fmt.Errorf("about to dial with transport credentials")
 	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
 }
 

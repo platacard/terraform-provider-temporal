@@ -109,7 +109,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "History Archival State",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString("Disabled"),
+				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"history_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "History Archival URI",
@@ -121,7 +121,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Visibility Archival State",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString("Disabled"),
+				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"visibility_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival URI",

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -108,7 +109,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "History Archival State",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString("Disabled"),
+				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"history_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "History Archival URI",
@@ -120,7 +121,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Visibility Archival State",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString("Disabled"),
+				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"visibility_archival_uri": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival URI",
@@ -176,13 +177,13 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	retention := time.Duration(data.Retention.ValueInt64()) * day
+	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
 
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        data.Name.ValueString(),
 		Description:                      data.Description.ValueString(),
 		OwnerEmail:                       data.OwnerEmail.ValueString(),
-		WorkflowExecutionRetentionPeriod: &retention,
+		WorkflowExecutionRetentionPeriod: retention,
 		ActiveClusterName:                data.ActiveClusterName.ValueString(),
 		VisibilityArchivalState:          enums.ArchivalState(enums.ArchivalState_value[data.VisibilityArchivalState.ValueString()]),
 		VisibilityArchivalUri:            data.VisibilityArchivalUri.ValueString(),
@@ -249,7 +250,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		Name:                    state.Name,
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
+		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
@@ -277,7 +278,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	retention := time.Duration(data.Retention.ValueInt64()) * day
+	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
 
 	request := &workflowservice.UpdateNamespaceRequest{
 		Namespace: data.Name.ValueString(),
@@ -286,7 +287,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 			OwnerEmail:  data.OwnerEmail.ValueString(),
 		},
 		Config: &namespace.NamespaceConfig{
-			WorkflowExecutionRetentionTtl: &retention,
+			WorkflowExecutionRetentionTtl: retention,
 			VisibilityArchivalState:       enums.ArchivalState(enums.ArchivalState_value[data.VisibilityArchivalState.ValueString()]),
 			VisibilityArchivalUri:         data.VisibilityArchivalUri.ValueString(),
 			HistoryArchivalState:          enums.ArchivalState(enums.ArchivalState_value[data.HistoryArchivalState.ValueString()]),

@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"strconv"
@@ -278,7 +277,10 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		certString = normalizeCert(tlsAttributes["cert"].String())
 		keyString = normalizeCert(tlsAttributes["key"].String())
 		caCerts = normalizeCert(tlsAttributes["ca"].String())
-		serverName = stripQuotes(tlsAttributes["server_name"].String())
+
+		if !tlsAttributes["server_name"].IsNull() {
+			serverName = stripQuotes(tlsAttributes["server_name"].String())
+		}
 	}
 
 	// If host and port not set use defaults
@@ -391,29 +393,21 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 	case false:
 		switch useTLS {
 		case true:
-			// Parse the certificate from PEM format
-			cert, err := getCertificate(certString)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse certificate: %v", err)
-			}
+			cert, err := tls.X509KeyPair([]byte(certString), []byte(keyString))
 
-			// Parse the private key from PEM format
-			key, err := getPrivateKey([]byte(keyString))
 			if err != nil {
-				return nil, fmt.Errorf("failed to parse private key: %v", err)
-			}
-
-			// Create a tls.Certificate from the parsed certificate and private key
-			tlsCert := tls.Certificate{
-				Certificate: [][]byte{cert.Raw},
-				PrivateKey:  key,
+				return nil, err
 			}
 
 			config := &tls.Config{
-				Certificates: []tls.Certificate{tlsCert},
+				Certificates: []tls.Certificate{cert},
 				RootCAs:      getCA([]byte(caCerts)),
-				ServerName:   serverName,
 			}
+
+			if len(serverName) > 0 {
+				config.ServerName = serverName
+			}
+
 			credentials = grpcCreds.NewTLS(config)
 		case false:
 			config := &tls.Config{}
@@ -433,42 +427,6 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 	}
 
 	return CreateInsecureClient(endpoint, credentials)
-}
-
-// Function to parse the public key from PEM format.
-func getCertificate(certPEM string) (*x509.Certificate, error) {
-	block, _ := pem.Decode([]byte(certPEM))
-
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode cert PEM. certPEM bytes:\n%v", []byte(certPEM))
-	}
-
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %v", err)
-	}
-
-	return cert, nil
-}
-
-// Function to parse the private key from PEM format.
-func getPrivateKey(keyPEM []byte) (interface{}, error) {
-	block, _ := pem.Decode(keyPEM)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode private key PEM")
-	}
-
-	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		// If parsing as PKCS1 fails, try parsing as PKCS8
-		pkcs8Key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse private key: %v", err)
-		}
-		return pkcs8Key, nil
-	}
-
-	return key, nil
 }
 
 // Function to get CA certificates.

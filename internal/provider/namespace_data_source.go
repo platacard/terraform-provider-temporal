@@ -156,7 +156,7 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.Hours() / 24)),
+		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),

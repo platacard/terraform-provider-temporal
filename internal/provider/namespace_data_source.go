@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
 )
@@ -158,9 +157,9 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
 		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
-		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		HistoryArchivalState:    types.StringValue(ns.Config.GetHistoryArchivalState().String()),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
-		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		VisibilityArchivalState: types.StringValue(ns.Config.GetVisibilityArchivalState().String()),
 		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
 	}

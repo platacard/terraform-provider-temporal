@@ -3,8 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/types/known/durationpb"
 	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -185,9 +186,9 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		OwnerEmail:                       data.OwnerEmail.ValueString(),
 		WorkflowExecutionRetentionPeriod: retention,
 		ActiveClusterName:                data.ActiveClusterName.ValueString(),
-		VisibilityArchivalState:          enums.ArchivalState(enums.ArchivalState_value[data.VisibilityArchivalState.ValueString()]),
+		VisibilityArchivalState:          ArchivalState[data.VisibilityArchivalState.ValueString()],
 		VisibilityArchivalUri:            data.VisibilityArchivalUri.ValueString(),
-		HistoryArchivalState:             enums.ArchivalState(enums.ArchivalState_value[data.HistoryArchivalState.ValueString()]),
+		HistoryArchivalState:             ArchivalState[data.HistoryArchivalState.ValueString()],
 		HistoryArchivalUri:               data.HistoryArchivalUri.ValueString(),
 		IsGlobalNamespace:                data.IsGlobalNamespace.ValueBool(),
 	}
@@ -252,9 +253,9 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
 		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
-		HistoryArchivalState:    types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetHistoryArchivalState())]),
+		HistoryArchivalState:    types.StringValue(ns.Config.GetHistoryArchivalState().String()),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
-		VisibilityArchivalState: types.StringValue(enums.ArchivalState_name[int32(ns.Config.GetVisibilityArchivalState())]),
+		VisibilityArchivalState: types.StringValue(ns.Config.GetVisibilityArchivalState().String()),
 		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
 	}
@@ -288,9 +289,9 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		},
 		Config: &namespace.NamespaceConfig{
 			WorkflowExecutionRetentionTtl: retention,
-			VisibilityArchivalState:       enums.ArchivalState(enums.ArchivalState_value[data.VisibilityArchivalState.ValueString()]),
+			VisibilityArchivalState:       ArchivalState[data.VisibilityArchivalState.ValueString()],
 			VisibilityArchivalUri:         data.VisibilityArchivalUri.ValueString(),
-			HistoryArchivalState:          enums.ArchivalState(enums.ArchivalState_value[data.HistoryArchivalState.ValueString()]),
+			HistoryArchivalState:          ArchivalState[data.HistoryArchivalState.ValueString()],
 			HistoryArchivalUri:            data.HistoryArchivalUri.ValueString(),
 		},
 		ReplicationConfig: &replication.NamespaceReplicationConfig{

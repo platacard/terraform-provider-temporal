@@ -216,6 +216,8 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 
 	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
+	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
+	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -314,7 +316,7 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 
 	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
-
+	// TODO: Assign HistoryArchivalURI and VisibilityArchivalURI to the data.
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 

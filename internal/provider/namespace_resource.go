@@ -116,7 +116,6 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "History Archival URI",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString(""),
 			},
 			"visibility_archival_state": schema.StringAttribute{
 				MarkdownDescription: "Visibility Archival State",
@@ -128,7 +127,6 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Visibility Archival URI",
 				Computed:            true,
 				Optional:            true,
-				Default:             stringdefault.StaticString(""),
 			},
 			"is_global_namespace": schema.BoolAttribute{
 				MarkdownDescription: "Namespace is Global",
@@ -216,6 +214,8 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 
 	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
+	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
+	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -314,7 +314,8 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 
 	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
-
+	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
+	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 

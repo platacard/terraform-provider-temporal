@@ -1,3 +1,4 @@
+version: 2
 # Visit https://goreleaser.com for documentation on how to customize this
 # behavior.
 before:
@@ -7,7 +8,7 @@ before:
 builds:
 - env:
     # goreleaser does not work with CGO, it could also complicate
-    # usage by users in CI/CD systems like Terraform Cloud where
+    # usage by users in CI/CD systems like HCP Terraform where
     # they are unable to install libraries.
     - CGO_ENABLED=0
   mod_timestamp: '{{ .CommitTimestamp }}'
@@ -54,7 +55,3 @@ release:
   extra_files:
     - glob: 'terraform-registry-manifest.json'
       name_template: '{{ .ProjectName }}_{{ .Version }}_manifest.json'
-  # If you want to manually examine the release before its live, uncomment this line:
-  # draft: true
-changelog:
-  skip: true

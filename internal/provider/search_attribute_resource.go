@@ -79,7 +79,7 @@ func (r *SearchAttributeResource) Schema(ctx context.Context, req resource.Schem
 func (r *SearchAttributeResource) Configure(ctx context.Context, req resource.ConfigureRequest, resp *resource.ConfigureResponse) {
 	tflog.Info(ctx, "Configuring Temporal Search Attribute Resource")
 
-	// Prevent panic if the provider has not been configured.
+	// Prevent panic if the provider has not been configured yet
 	if req.ProviderData == nil {
 		return
 	}
@@ -128,9 +128,6 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	tflog.Info(ctx, fmt.Sprintf("The search attribute: %s of type %s is successfully created", data.Name, data.Type.String()))
-	tflog.Trace(ctx, "Created a resource")
-
 	// Verify attribute creation
 	attributes, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
 		Namespace: data.Namespace.ValueString(),
@@ -151,6 +148,8 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Info(ctx, fmt.Sprintf("The search attribute: %s of type %s is successfully created", data.Name, data.Type.String()))
 }
 
 // Read is responsible for reading the current state of a Temporal search attribute.
@@ -175,12 +174,10 @@ func (r *SearchAttributeResource) Read(ctx context.Context, req resource.ReadReq
 		return
 	}
 
-	tflog.Trace(ctx, "Read a Temporal search attribute resource")
-
 	// Attempt to find search attribute
 	attr, ok := attributes.CustomAttributes[state.Name.ValueString()]
 	if !ok {
-		// Delete resource if not found in underlying system
+		// Delete resource from state if not found in underlying system
 		tflog.Info(ctx, "Resource not found, removing from state")
 		resp.State.RemoveResource(ctx)
 		return
@@ -197,6 +194,8 @@ func (r *SearchAttributeResource) Read(ctx context.Context, req resource.ReadReq
 	if resp.Diagnostics.HasError() {
 		return
 	}
+
+	tflog.Info(ctx, "Read a Temporal search attribute resource")
 }
 
 // Update is a no-op method that handles update calls without making any changes.
@@ -236,25 +235,24 @@ func (r *SearchAttributeResource) Delete(ctx context.Context, req resource.Delet
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("Successfully deleted search attribute: %s", data.Name.ValueString()))
-	tflog.Trace(ctx, "Deleted a resource")
 }
 
 // ImportState allows existing Temporal search attributes to be imported into the Terraform state.
 // Importing system attributes is not supported
 func (r *SearchAttributeResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 
-	// Expected request ID format is a string 'namespace:search_attribute_name'
+	// Expected request ID format is 'namespace:search_attribute_name'
 	// Ex: 'default:CustomBool'
+	idTokens := strings.Split(req.ID, ":")
 
-	parts := strings.Split(req.ID, ":")
-	if len(parts) < 2 {
+	const idTokenCount = 2
+	if len(idTokens) != idTokenCount {
 		resp.Diagnostics.AddError("Invalid ID format", "Expected 'namespace:name'.")
-
 		return
 	}
 
-	namespace := parts[0]
-	name := parts[1]
+	namespace := idTokens[0]     // 'default' in ID 'default:CustomBool'
+	attributeName := idTokens[1] // 'CustomBool' in ID 'default:CustomBool'
 
 	// Fetch the search attribute details
 	client := operatorservice.NewOperatorServiceClient(r.client)
@@ -272,14 +270,14 @@ func (r *SearchAttributeResource) ImportState(ctx context.Context, req resource.
 	var attributeType enums.IndexedValueType
 	var found bool
 
-	if attributeType, found = attributes.GetCustomAttributes()[name]; !found {
-		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Custom Search Attribute '%s' not found in namespace '%s'", name, namespace))
+	if attributeType, found = attributes.GetCustomAttributes()[attributeName]; !found {
+		resp.Diagnostics.AddError("Not Found", fmt.Sprintf("Custom Search Attribute '%s' not found in namespace '%s'", attributeName, namespace))
 		return
 	}
 
 	// Set the ID and other attributes needed for managing the resource
 	diags := resp.State.Set(ctx, &SearchAttributeResourceModel{
-		Name:      types.StringValue(name),
+		Name:      types.StringValue(attributeName),
 		Namespace: types.StringValue(namespace),
 		Type:      types.StringValue(attributeType.String()),
 	})
@@ -288,5 +286,5 @@ func (r *SearchAttributeResource) ImportState(ctx context.Context, req resource.
 		return
 	}
 
-	tflog.Info(ctx, fmt.Sprintf("Imported search attribute %s of type %s successfully", name, attributeType.String()))
+	tflog.Info(ctx, fmt.Sprintf("Imported search attribute %s of type %s successfully", attributeName, attributeType.String()))
 }

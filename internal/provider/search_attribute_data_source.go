@@ -47,7 +47,7 @@ func (d *SearchAttributeDataSource) Metadata(ctx context.Context, req datasource
 func (d *SearchAttributeDataSource) Schema(ctx context.Context, req datasource.SchemaRequest, resp *datasource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
-		MarkdownDescription: "Temporal Search Attribute resource",
+		MarkdownDescription: "Temporal Search Attribute data source",
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -70,7 +70,7 @@ func (d *SearchAttributeDataSource) Schema(ctx context.Context, req datasource.S
 func (d *SearchAttributeDataSource) Configure(ctx context.Context, req datasource.ConfigureRequest, resp *datasource.ConfigureResponse) {
 	tflog.Info(ctx, "Configuring Temporal SearchAttribute DataSource")
 
-	// Prevent panic if the provider has not been configured.
+	// Prevent panic if the provider has not been configured yet.
 	if req.ProviderData == nil {
 		return
 	}
@@ -143,5 +143,5 @@ func (d *SearchAttributeDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
-	tflog.Trace(ctx, "SearchAttribute data source read successfully", map[string]any{"name": name, "type": attributeType.String(), "namespace": namespace})
+	tflog.Info(ctx, "SearchAttribute data source read successfully", map[string]any{"name": name, "type": attributeType.String(), "namespace": namespace})
 }

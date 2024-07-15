@@ -326,6 +326,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
 		NewNamespaceResource,
+		NewSearchAttributeResource,
 	}
 }
 
@@ -333,6 +334,7 @@ func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Reso
 func (p *TemporalProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	return []func() datasource.DataSource{
 		NewNamespaceDataSource,
+		NewSearchAttributeDataSource,
 	}
 }
 

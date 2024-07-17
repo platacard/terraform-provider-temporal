@@ -59,8 +59,8 @@ func (d *SearchAttributeDataSource) Schema(ctx context.Context, req datasource.S
 				Computed:            true,
 			},
 			"namespace": schema.StringAttribute{
-				MarkdownDescription: "Namespace with which the Search Attribute is associated",
-				Required:            true,
+				MarkdownDescription: "Namespace with which the Search Attribute is associated. If this is not provided, 'default' will be used",
+				Optional:            true,
 			},
 		},
 	}
@@ -94,7 +94,8 @@ func (d *SearchAttributeDataSource) Configure(ctx context.Context, req datasourc
 func (d *SearchAttributeDataSource) Read(ctx context.Context, req datasource.ReadRequest, resp *datasource.ReadResponse) {
 	tflog.Info(ctx, "Reading Temporal Search Attribute")
 
-	var name, namespace string
+	var name string
+	var namespace types.String
 
 	// Get the 'name' and 'namespace' attributes from the configuration
 	diags := req.Config.GetAttribute(ctx, path.Root("name"), &name)
@@ -109,8 +110,13 @@ func (d *SearchAttributeDataSource) Read(ctx context.Context, req datasource.Rea
 		return
 	}
 
+	// If the user has not provided a namespace for the data source, use 'default'
+	if namespace.IsNull() {
+		namespace = types.StringValue("default")
+	}
+
 	request := &operatorservice.ListSearchAttributesRequest{
-		Namespace: namespace,
+		Namespace: namespace.ValueString(),
 	}
 
 	// Calling API for existing attribute details
@@ -133,7 +139,7 @@ func (d *SearchAttributeDataSource) Read(ctx context.Context, req datasource.Rea
 	data := &SearchAttributeDataSourceModel{
 		Name:      types.StringValue(name),
 		Type:      types.StringValue(attributeType.String()),
-		Namespace: types.StringValue(namespace),
+		Namespace: namespace,
 	}
 
 	// Save the fetched data into Terraform state

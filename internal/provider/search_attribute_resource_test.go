@@ -35,6 +35,23 @@ func TestAccSearchAttributeResource(t *testing.T) {
 				),
 			},
 
+			// Explicitly test read by using PlanOnly, which will call Read() and generate a plan without applying it
+			// Since our config matches the server state, the plan should be empty and won't error
+			{
+				Config: providerConfig + `
+				resource "temporal_search_attribute" "test" {
+					namespace = "default"
+					name = "testAttr"
+					type = "Keyword"
+				}`,
+				PlanOnly: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_search_attribute.test", "name", "testAttr"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.test", "type", "Keyword"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.test", "namespace", "default"),
+				),
+			},
+
 			// Test importing an existing search attribute
 			/*
 				NOTE: This test can be used to test importing a search attribute created outside of terrafrom. To do this,

@@ -241,18 +241,27 @@ func (r *SearchAttributeResource) Delete(ctx context.Context, req resource.Delet
 // Importing system attributes is not supported
 func (r *SearchAttributeResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 
-	// Expected request ID format is 'namespace:search_attribute_name'
-	// Ex: 'default:CustomBool'
-	idTokens := strings.Split(req.ID, ":")
+	// Expected request ID format is either 'namespace:search_attribute_name' or 'search_attribute_name'
+	// Ex: 'default:CustomBool' or 'customBool'
+	// If no namespace is provided, 'default' will be used
 
-	const idTokenCount = 2
-	if len(idTokens) != idTokenCount {
-		resp.Diagnostics.AddError("Invalid ID format", "Expected 'namespace:name'.")
+	var namespace, attributeName string
+
+	idTokens := strings.Split(req.ID, ":")
+	switch len(idTokens) {
+	case 1:
+		// One part: Attribute name with default namespace ('CustomBool')
+		namespace = "default"
+		attributeName = idTokens[0]
+	case 2:
+		// Two parts: the first is namespace, second is attribute name ('default:CustomBool')
+		namespace = idTokens[0]
+		attributeName = idTokens[1]
+	default:
+		// If neither, return an error
+		resp.Diagnostics.AddError("Invalid ID format", "Expected 'namespace:search_attribute_name' or just 'search_attribute_name'.")
 		return
 	}
-
-	namespace := idTokens[0]     // 'default' in ID 'default:CustomBool'
-	attributeName := idTokens[1] // 'CustomBool' in ID 'default:CustomBool'
 
 	// Fetch the search attribute details
 	client := operatorservice.NewOperatorServiceClient(r.client)

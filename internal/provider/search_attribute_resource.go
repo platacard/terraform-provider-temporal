@@ -110,6 +110,22 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
+	// Check if the attribute already exists in the custom attributes
+	// The API indicates that this should be handled by the AddSearchAttributes() method, but docs seem to be out of date
+	// Support thread: https://temporalio.slack.com/archives/CTDTU3J4T/p1721255485197359
+
+	existingAttrs, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
+		Namespace: data.Namespace.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", "Failed to list existing search attributes: "+err.Error())
+		return
+	}
+	if _, exists := existingAttrs.CustomAttributes[data.Name.ValueString()]; exists {
+		resp.Diagnostics.AddError("Already Exists", "Search attribute with the provided name already exists and cannot be created again.")
+		return
+	}
+
 	// Create attribute
 	indexedValueType, _ := enums.IndexedValueTypeFromString(data.Type.ValueString())
 
@@ -117,7 +133,7 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		Namespace:        data.Namespace.ValueString(),
 		SearchAttributes: map[string]enums.IndexedValueType{data.Name.ValueString(): indexedValueType},
 	}
-	_, err := client.AddSearchAttributes(ctx, request)
+	_, err = client.AddSearchAttributes(ctx, request)
 
 	if err != nil {
 		if _, ok := err.(*serviceerror.AlreadyExists); ok {

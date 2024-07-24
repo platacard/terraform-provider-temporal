@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
-// Replace these to test importing a custom search attribute created outside of terrafrom
+// Replace these to test importing a custom search attribute created outside of terrafrom.
 const (
 	importedAttributeName      = "testAttr"
 	importedAttributeType      = "Keyword"
@@ -67,7 +67,7 @@ func TestAccSearchAttributeResource(t *testing.T) {
 				ImportStateCheck: checkImportedResourceAttributes,                                         // Verifies resource attributes post-import
 			},
 
-			// Test destorying all existing resources
+			// Test destroying all existing resources
 			{
 				Config: providerConfig,
 				Check:  testAccCheckExampleResourceDestroy, // Verifies that there are no remaining search attribute resources
@@ -76,7 +76,7 @@ func TestAccSearchAttributeResource(t *testing.T) {
 	})
 }
 
-// Verifies the attributes of a resource post-import
+// Verifies the attributes of a resource post-import.
 func checkImportedResourceAttributes(states []*terraform.InstanceState) error {
 	if len(states) == 0 {
 		return fmt.Errorf("no instances are available for import check")
@@ -96,7 +96,7 @@ func checkImportedResourceAttributes(states []*terraform.InstanceState) error {
 	return nil
 }
 
-// Verifies that all temporal_search_attribute resources have been successfully destroyed
+// Verifies that all temporal_search_attribute resources have been successfully destroyed.
 func testAccCheckExampleResourceDestroy(s *terraform.State) error {
 	for _, rs := range s.RootModule().Resources {
 		if rs.Type == "temporal_search_attribute" {

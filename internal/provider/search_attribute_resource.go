@@ -254,7 +254,7 @@ func (r *SearchAttributeResource) Delete(ctx context.Context, req resource.Delet
 }
 
 // ImportState allows existing Temporal search attributes to be imported into the Terraform state.
-// Importing system attributes is not supported
+// Importing system attributes is not supported.
 func (r *SearchAttributeResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 
 	// Expected request ID format is either 'namespace:search_attribute_name' or 'search_attribute_name'

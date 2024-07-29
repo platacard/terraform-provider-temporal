@@ -1,6 +1,7 @@
 package provider_test
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
@@ -46,6 +47,34 @@ resource "temporal_namespace" "test" {
 					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", "updated@example.org"),
 				),
+			},
+		},
+	})
+}
+
+func TestAccNamespaceAlreadyExsits(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test1" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+				}`,
+			},
+			// Namespace already exists Error
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test2" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+				}
+				`,
+				ExpectError: regexp.MustCompile("namespace registration failed.*code = AlreadyExists"),
 			},
 		},
 	})

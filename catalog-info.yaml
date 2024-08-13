@@ -1,0 +1,10 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  namespace: default
+  name: terraform-provider-temporal
+  description: Terraform provider to manage Temporal Server resources
+spec:
+  type: service
+  owner: group:default/cloud
+  lifecycle: production

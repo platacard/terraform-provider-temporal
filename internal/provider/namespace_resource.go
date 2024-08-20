@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -208,7 +210,7 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		Namespace: data.Name.ValueString(),
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create Namespace info, got error: %s", err))
 		return
 	}
 
@@ -236,12 +238,20 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	namespace := state.Name.ValueString()
 	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
-		Namespace: state.Name.ValueString(),
+		Namespace: namespace,
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
-		return
+		errCode := status.Code(err)
+		if errCode == codes.NotFound {
+			tflog.Warn(ctx, "Namespace not found", map[string]interface{}{"err": err, "namespace": namespace})
+			resp.State.RemoveResource(ctx)
+			return
+		} else {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))
+			return
+		}
 	}
 
 	tflog.Trace(ctx, "read a Temporal Namespace resource")
@@ -262,9 +272,6 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	// Set refreshed state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
-	if resp.Diagnostics.HasError() {
-		return
-	}
 }
 
 // Update modifies an existing Temporal namespace based on Terraform configuration changes.

@@ -246,7 +246,6 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 		errCode := status.Code(err)
 		if errCode == codes.NotFound {
 			tflog.Warn(ctx, "Namespace not found", map[string]interface{}{"err": err, "namespace": namespace})
-			resp.State.RemoveResource(ctx)
 			return
 		} else {
 			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Namespace info, got error: %s", err))

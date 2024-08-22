@@ -1,6 +1,6 @@
 # Terraform Provider Temporal
 
-Tis provider aims to manage [Temporal](https://temporal.io/) resources
+This provider aims to manage [Temporal](https://temporal.io/) resources
 
 ## Requirements
 

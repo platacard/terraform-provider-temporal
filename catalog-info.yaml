@@ -2,6 +2,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   namespace: default
+  annotations:
+    github.com/project-slug: terraform-provider-temporal
   name: terraform-provider-temporal
   description: Terraform provider to manage Temporal Server resources
 spec:

@@ -2,11 +2,14 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   namespace: default
-  annotations:
-    github.com/project-slug: platacard/terraform-provider-temporal
   name: terraform-provider-temporal
+  title: Terraform Provider Temporal
   description: Terraform provider to manage Temporal Server resources
+  links:
+    - title: Terraform Registry
+      url: https://registry.terraform.io/providers/platacard/temporal/latest
+      icon: terraform
 spec:
-  type: service
-  owner: group:default/cloud
+  type: library
+  owner: group:default/devops
   lifecycle: production

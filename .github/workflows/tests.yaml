@@ -60,6 +60,8 @@ jobs:
       - uses: temporalio/setup-temporal@v0
       - run: temporal server start-dev --headless &
         shell: bash
+      - run:  temporal operator namespace update --namespace default --description  "Default namespace for Temporal Server."
+        shell: bash
       - uses: actions/setup-go@v4
         with:
           go-version-file: 'go.mod'

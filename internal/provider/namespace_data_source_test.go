@@ -20,7 +20,7 @@ data "temporal_namespace" "default" {
 
 				Check: resource.ComposeAggregateTestCheckFunc(
 					resource.TestCheckResourceAttr("data.temporal_namespace.default", "name", "default"),
-					resource.TestCheckResourceAttr("data.temporal_namespace.default", "description", ""),
+					resource.TestCheckResourceAttr("data.temporal_namespace.default", "description", "Default namespace for Temporal Server."),
 				),
 			},
 		},

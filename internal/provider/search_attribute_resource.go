@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -24,6 +25,31 @@ var (
 	_ resource.ResourceWithConfigure   = &SearchAttributeResource{}
 	_ resource.ResourceWithImportState = &SearchAttributeResource{}
 )
+
+// AwaitAddSearchAttributes waits for the completion of AddSearchAttributesRequest using ListSearchAttributes.
+func AwaitAddSearchAttributes(ctx context.Context, operatorClient operatorservice.OperatorServiceClient, data SearchAttributeResourceModel) error {
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			// Verify attribute creation
+			attributes, err := operatorClient.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
+				Namespace: data.Namespace.ValueString(),
+			})
+			if err != nil {
+				return err
+			}
+
+			if _, ok := attributes.CustomAttributes[data.Name.ValueString()]; ok {
+				return nil
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
 
 // NewSearchAttributeResource creates a new instance of SearchAttributeResource.
 func NewSearchAttributeResource() resource.Resource {
@@ -134,7 +160,6 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		SearchAttributes: map[string]enums.IndexedValueType{data.Name.ValueString(): indexedValueType},
 	}
 	_, err = client.AddSearchAttributes(ctx, request)
-
 	if err != nil {
 		if _, ok := err.(*serviceerror.AlreadyExists); ok {
 			resp.Diagnostics.AddError("Request Error", "Search attribute with that name is already registered: "+err.Error())
@@ -144,18 +169,9 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	// Verify attribute creation
-	attributes, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
-		Namespace: data.Namespace.ValueString(),
-	})
+	err = AwaitAddSearchAttributes(ctx, client, data)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read search attribute info, got error: %s", err))
-		return
-	}
-
-	_, ok := attributes.CustomAttributes[data.Name.ValueString()]
-	if !ok {
-		resp.Diagnostics.AddError("Verification Error", fmt.Sprintf("%s not found, creation could not be verified", data.Name.ValueString()))
+		resp.Diagnostics.AddError("Request Error", "Error awaiting results: "+err.Error())
 		return
 	}
 

@@ -367,7 +367,7 @@ func GetToken(clientID, clientSecret, tokenURL, audience string) (*oauth2.Token,
 
 // CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
 func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials), grpc.WithUnaryInterceptor(
+	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials), grpc.WithUnaryInterceptor(
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 			newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
 			return invoker(newCtx, method, req, reply, cc, opts...)
@@ -377,12 +377,12 @@ func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials
 
 // CreateSecureClient creates a gRPC client using mTLS without OAuth authentication.
 func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
+	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials))
 }
 
 // CreateInsecureClient creates a gRPC client without any authentication.
 func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	return grpc.Dial(endpoint, grpc.WithTransportCredentials(credentials))
+	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials))
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.

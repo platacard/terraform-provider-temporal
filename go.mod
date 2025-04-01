@@ -1,7 +1,7 @@
 module terraform-provider-temporal
 
 go 1.22.7
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	github.com/hashicorp/terraform-plugin-docs v0.21.0
@@ -13,7 +13,7 @@ require (
 	go.temporal.io/api v1.45.0
 	golang.org/x/oauth2 v0.27.0
 	google.golang.org/grpc v1.70.0
-	google.golang.org/protobuf v1.36.5
+	google.golang.org/protobuf v1.36.6
 )
 
 require (

@@ -267,7 +267,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		serverName string
 	)
 
-	var useTLS bool = false
+	var useTLS = false
 
 	if !config.TLS.IsNull() {
 		useTLS = true
@@ -327,6 +327,7 @@ func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Reso
 	return []func() resource.Resource{
 		NewNamespaceResource,
 		NewSearchAttributeResource,
+		NewScheduleResource,
 	}
 }
 
@@ -452,7 +453,7 @@ func getBoolEnv(key string) (result bool, err error) {
 
 // Helper function to strip quotes and remove line return escaping from cert.
 func normalizeCert(value string) string {
-	return strings.Replace(stripQuotes(value), "\\n", "\n", -1)
+	return strings.ReplaceAll(stripQuotes(value), "\\n", "\n")
 }
 
 // Helper function to strip quotes from string.

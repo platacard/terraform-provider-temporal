@@ -1,7 +1,7 @@
 # Manage an example search attribute, with or without explicitly providing a namespace
 resource "temporal_search_attribute" "example_search_attribute" {
-  name = "example"
-  type = "Bool"
+  name      = "example"
+  type      = "Bool"
   namespace = "default"
 }
 

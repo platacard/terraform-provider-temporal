@@ -9,12 +9,12 @@ terraform {
 provider "temporal" {
   host = "127.0.0.1"
   port = "7233"
-  
+
   # Add certs for mTLS auth.
   tls {
-    cert = sensitive(file("path/to/cert.pem"))
-    key  = sensitive(file("path/to/key.pem"))
-    ca = sensitive(file("path/to/cacerts.pem"))
+    cert        = sensitive(file("path/to/cert.pem"))
+    key         = sensitive(file("path/to/key.pem"))
+    ca          = sensitive(file("path/to/cacerts.pem"))
     server_name = "server-name"
   }
 }

@@ -7,8 +7,7 @@ description: |-
 # Temporal Provider
 
 The Terraform Provider for Temporal allows you to manage
-Self-Hosted [Temporal](https://temporal.io/) resources using Infrastructure as Code. This
-provider enables declarative management of Temporal namespaces, schedules, and
+Self-Hosted [Temporal](https://temporal.io/) resources using Infrastructure as Code.
 
 ## Authentication Scenarios
 

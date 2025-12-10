@@ -712,6 +712,9 @@ func convertToScheduleAction(actionModel *ScheduleActionModel) (*schedulev1.Sche
 		workflowAction.Input = &commonv1.Payloads{
 			Payloads: []*commonv1.Payload{
 				{
+					Metadata: map[string][]byte{
+						"encoding": []byte("json/plain"),
+					},
 					Data: []byte(actionModel.Workflow.Input.ValueString()),
 				},
 			},

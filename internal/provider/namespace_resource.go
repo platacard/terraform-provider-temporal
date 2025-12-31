@@ -9,6 +9,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
@@ -57,6 +58,7 @@ type NamespaceResourceModel struct {
 	OwnerEmail              types.String `tfsdk:"owner_email"`
 	Retention               types.Int64  `tfsdk:"retention"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
+	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
 	HistoryArchivalUri      types.String `tfsdk:"history_archival_uri"`
 	VisibilityArchivalState types.String `tfsdk:"visibility_archival_state"`
@@ -107,6 +109,12 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Active Cluster Name",
 				Optional:            true,
 				Computed:            true,
+			},
+			"clusters": schema.ListAttribute{
+				MarkdownDescription: "Clusters",
+				Optional:            true,
+				Computed:            true,
+				ElementType:         types.StringType,
 			},
 			"history_archival_state": schema.StringAttribute{
 				MarkdownDescription: "History Archival State",
@@ -193,6 +201,16 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		IsGlobalNamespace:                data.IsGlobalNamespace.ValueBool(),
 	}
 
+	clusters, diags := getClustersFromModel(ctx, data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	if len(clusters) > 0 {
+		request.Clusters = clusters
+	}
+
 	_, err := client.RegisterNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
@@ -214,10 +232,10 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
-	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
-	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
-	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
+	resp.Diagnostics.Append(updateModelFromSpec(ctx, &data, ns)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
 
 	// Save data into Terraform state
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
@@ -255,18 +273,10 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	tflog.Trace(ctx, "read a Temporal Namespace resource")
 
-	data := &NamespaceResourceModel{
-		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
-		Name:                    state.Name,
-		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
-		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
-		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
-		HistoryArchivalState:    types.StringValue(ns.Config.GetHistoryArchivalState().String()),
-		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
-		VisibilityArchivalState: types.StringValue(ns.Config.GetVisibilityArchivalState().String()),
-		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
-		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
+	var data NamespaceResourceModel
+	resp.Diagnostics.Append(updateModelFromSpec(ctx, &data, ns)...)
+	if resp.Diagnostics.HasError() {
+		return
 	}
 
 	// Set refreshed state
@@ -300,14 +310,58 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 			HistoryArchivalState:          ArchivalState[data.HistoryArchivalState.ValueString()],
 			HistoryArchivalUri:            data.HistoryArchivalUri.ValueString(),
 		},
-		ReplicationConfig: &replication.NamespaceReplicationConfig{
-			ActiveClusterName: data.ActiveClusterName.ValueString(),
-		},
 		// promote local namespace to global namespace. Ignored if namespace is already global namespace.
 		PromoteNamespace: data.IsGlobalNamespace.ValueBool(),
 	}
+	// get the current namespace info
+	currentNs, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to describe namespace, got error: %s", err))
+		return
+	}
+	// get the old namespace info to compare with the new namespace info
+	var oldData NamespaceResourceModel
+	resp.Diagnostics.Append(updateModelFromSpec(ctx, &oldData, currentNs)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// check if the clusters are changed
+	if !data.Clusters.IsUnknown() && !data.Clusters.Equal(oldData.Clusters) {
+		// check if the active cluster name is changed
+		if !data.ActiveClusterName.IsUnknown() && !data.ActiveClusterName.Equal(oldData.ActiveClusterName) {
+			// cannot update active cluster name and clusters at the same time
+			resp.Diagnostics.AddError("Cannot update namespace", "Cannot update active cluster name and clusters at the same time")
+			return
+		}
+		// check if the active cluster name is in the clusters
+		if !clusterInClusters(oldData.ActiveClusterName, data.Clusters) {
+			// cannot update active cluster name if it is not in the clusters
+			resp.Diagnostics.AddError("Cannot update namespace", "Active cluster name is not in the clusters")
+			return
+		}
+		// get the clusters from the model
+		clusters, diags := getClustersFromModel(ctx, data)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+		if len(clusters) > 0 {
+			request.ReplicationConfig = &replication.NamespaceReplicationConfig{
+				Clusters: clusters,
+			}
+		}
+	} else {
+		// check if the active cluster name is in the clusters
+		if !data.ActiveClusterName.IsUnknown() && !clusterInClusters(data.ActiveClusterName, oldData.Clusters) {
+			// cannot update active cluster name if it is not in the clusters
+			resp.Diagnostics.AddError("Cannot update namespace", "Active cluster name is not in the clusters")
+			return
+		}
+	}
 
-	ns, err := client.UpdateNamespace(ctx, request)
+	_, err = client.UpdateNamespace(ctx, request)
 	if err != nil {
 		if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
 			resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
@@ -318,10 +372,38 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		}
 	}
 
-	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
-	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
-	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
-	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
+	// check if the active cluster name is changed
+	if !data.ActiveClusterName.IsUnknown() && !data.ActiveClusterName.Equal(oldData.ActiveClusterName) {
+		newRequest := &workflowservice.UpdateNamespaceRequest{
+			Namespace: data.Name.ValueString(),
+			ReplicationConfig: &replication.NamespaceReplicationConfig{
+				ActiveClusterName: data.ActiveClusterName.ValueString(),
+			},
+		}
+		_, err = client.UpdateNamespace(ctx, newRequest)
+		if err != nil {
+			if _, ok := err.(*serviceerror.NamespaceAlreadyExists); !ok {
+				resp.Diagnostics.AddError("Request error", "namespace registration failed: "+err.Error())
+				return
+			}
+			resp.Diagnostics.AddError("Request error", "Unable to update namespace: "+err.Error())
+			return
+		}
+	}
+	// get the updated namespace info
+	ns, err := client.DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: data.Name.ValueString(),
+	})
+	if err != nil {
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to describe namespace, got error: %s", err))
+		return
+	}
+	// update the model from the updated namespace info
+	resp.Diagnostics.Append(updateModelFromSpec(ctx, &data, ns)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
 	tflog.Info(ctx, fmt.Sprintf("The namespace: %s is successfully registered", data.Name))
 	tflog.Trace(ctx, "created a resource")
 
@@ -361,4 +443,66 @@ func (r *NamespaceResource) Delete(ctx context.Context, req resource.DeleteReque
 // ImportState allows existing Temporal namespaces to be imported into the Terraform state.
 func (r *NamespaceResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resource.ImportStatePassthroughID(ctx, path.Root("name"), req, resp)
+}
+
+// getClustersFromModel gets the clusters from the model and the clusters in the request format.
+func getClustersFromModel(ctx context.Context, model NamespaceResourceModel) ([]*replication.ClusterReplicationConfig, diag.Diagnostics) {
+	var diags diag.Diagnostics
+	clusters := make([]types.String, 0, len(model.Clusters.Elements()))
+	diags.Append(model.Clusters.ElementsAs(ctx, &clusters, true)...)
+	if diags.HasError() {
+		return nil, diags
+	}
+	requestClusters := make([]*replication.ClusterReplicationConfig, 0, len(clusters))
+	for _, cluster := range clusters {
+		requestClusters = append(requestClusters, &replication.ClusterReplicationConfig{
+			ClusterName: cluster.ValueString(),
+		})
+	}
+	return requestClusters, diags
+}
+
+// getClustersFromRequest gets the clusters from the request and returns the clusters in the model format.
+func getClustersFromRequest(ctx context.Context, clusterReplicationConfig []*replication.ClusterReplicationConfig) (types.List, diag.Diagnostics) {
+	clusters := make([]types.String, 0, len(clusterReplicationConfig))
+	for _, cluster := range clusterReplicationConfig {
+		clusters = append(clusters, types.StringValue(cluster.GetClusterName()))
+	}
+	return types.ListValueFrom(ctx, types.StringType, clusters)
+}
+
+// updateModelFromSpec updates the model from the namespace spec.
+func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *workflowservice.DescribeNamespaceResponse) diag.Diagnostics {
+	var diags diag.Diagnostics
+	data.Id = types.StringValue(ns.NamespaceInfo.GetId())
+	data.Name = types.StringValue(ns.NamespaceInfo.GetName())
+	data.Description = types.StringValue(ns.NamespaceInfo.GetDescription())
+	data.OwnerEmail = types.StringValue(ns.NamespaceInfo.GetOwnerEmail())
+	data.Retention = types.Int64Value(int64(ns.Config.GetWorkflowExecutionRetentionTtl().AsDuration().Hours() / 24))
+	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
+	data.HistoryArchivalState = types.StringValue(ns.GetConfig().GetHistoryArchivalState().String())
+	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
+	data.VisibilityArchivalState = types.StringValue(ns.GetConfig().GetVisibilityArchivalState().String())
+	data.VisibilityArchivalUri = types.StringValue(ns.GetConfig().GetVisibilityArchivalUri())
+	data.IsGlobalNamespace = types.BoolValue(ns.GetIsGlobalNamespace())
+
+	if len(ns.GetReplicationConfig().GetClusters()) > 0 {
+		clustersList, clustersDiags := getClustersFromRequest(ctx, ns.GetReplicationConfig().GetClusters())
+		diags.Append(clustersDiags...)
+		if diags.HasError() {
+			return diags
+		}
+		data.Clusters = clustersList
+	}
+	return diags
+}
+
+// clusterInClusters checks if the cluster is in the clusters list.
+func clusterInClusters(clusterName types.String, clusters types.List) bool {
+	for _, cluster := range clusters.Elements() {
+		if clusterName.Equal(cluster) {
+			return true
+		}
+	}
+	return false
 }

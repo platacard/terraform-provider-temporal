@@ -6,6 +6,7 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
@@ -38,6 +39,7 @@ type NamespaceDataSourceModel struct {
 	OwnerEmail              types.String `tfsdk:"owner_email"`
 	Retention               types.Int64  `tfsdk:"retention"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
+	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
 	HistoryArchivalUri      types.String `tfsdk:"history_archival_uri"`
 	VisibilityArchivalState types.String `tfsdk:"visibility_archival_state"`
@@ -80,6 +82,11 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 			"active_cluster_name": schema.StringAttribute{
 				MarkdownDescription: "Active Cluster Name",
 				Computed:            true,
+			},
+			"clusters": schema.ListAttribute{
+				MarkdownDescription: "Clusters",
+				Computed:            true,
+				ElementType:         types.StringType,
 			},
 			"history_archival_state": schema.StringAttribute{
 				MarkdownDescription: "History Archival State",
@@ -150,6 +157,23 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 
 	tflog.Trace(ctx, "read a data source")
 
+	var data *NamespaceDataSourceModel
+	data, diags = namespaceToNamespaceDataSourceModel(ctx, ns)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+
+	// Save data into Terraform state
+	diags = resp.State.Set(ctx, &data)
+	resp.Diagnostics.Append(diags...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+}
+
+func namespaceToNamespaceDataSourceModel(ctx context.Context, ns *workflowservice.DescribeNamespaceResponse) (*NamespaceDataSourceModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
 	data := &NamespaceDataSourceModel{
 		Name:                    types.StringValue(ns.NamespaceInfo.GetName()),
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
@@ -163,11 +187,13 @@ func (d *NamespaceDataSource) Read(ctx context.Context, req datasource.ReadReque
 		VisibilityArchivalUri:   types.StringValue(ns.Config.GetVisibilityArchivalUri()),
 		IsGlobalNamespace:       types.BoolValue(ns.GetIsGlobalNamespace()),
 	}
-
-	// Save data into Terraform state
-	diags = resp.State.Set(ctx, &data)
-	resp.Diagnostics.Append(diags...)
-	if resp.Diagnostics.HasError() {
-		return
+	if len(ns.GetReplicationConfig().GetClusters()) > 0 {
+		clustersList, clustersDiags := getClustersFromRequest(ctx, ns.GetReplicationConfig().GetClusters())
+		diags.Append(clustersDiags...)
+		if diags.HasError() {
+			return nil, diags
+		}
+		data.Clusters = clustersList
 	}
+	return data, diags
 }

@@ -79,3 +79,91 @@ func TestAccNamespaceAlreadyExsits(t *testing.T) {
 		},
 	})
 }
+
+func TestAccNamespaceSetReplicationConfig(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+					active_cluster_name = "active"
+				}
+				`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "active_cluster_name", "active"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "clusters.0", "active"),
+				),
+			},
+		},
+	})
+}
+
+func TestAccNamespaceSetReplicationWithChangeBothActiveClusterNameAndClusters(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+					active_cluster_name = "active"
+					clusters = ["active"]
+				}
+				`,
+			},
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+					active_cluster_name = "standby"
+					clusters = ["standby"]
+				}
+				`,
+				ExpectError: regexp.MustCompile("Cannot update active cluster name and clusters at the same time"),
+			},
+		},
+	})
+}
+
+func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create and Read testing
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+					active_cluster_name = "active"
+					clusters = ["active"]
+				}
+				`,
+			},
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+					active_cluster_name = "standby"
+					clusters = ["active"]
+				}
+				`,
+				ExpectError: regexp.MustCompile("Active cluster name is not in the clusters"),
+			},
+		},
+	})
+}

@@ -26,3 +26,23 @@ data "temporal_namespace" "default" {
 		},
 	})
 }
+
+func TestAccNamespaceDataSourceWithClusters(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Read testing
+			{
+				Config: providerConfig + `
+                data "temporal_namespace" "test" {
+                        name = "default"
+                }
+			    `,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("data.temporal_namespace.test", "name", "default"),
+					resource.TestCheckResourceAttr("data.temporal_namespace.test", "clusters.0", "active"),
+				),
+			},
+		},
+	})
+}

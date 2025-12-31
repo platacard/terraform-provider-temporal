@@ -32,6 +32,7 @@ resource "temporal_namespace" "example" {
 ### Optional
 
 - `active_cluster_name` (String) Active Cluster Name
+- `clusters` (List of String) Clusters 
 - `description` (String) Namespace Description
 - `history_archival_state` (String) History Archival State
 - `history_archival_uri` (String) History Archival URI

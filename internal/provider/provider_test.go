@@ -1,7 +1,7 @@
 package provider_test
 
 import (
-	"terraform-provider-temporal/internal/provider"
+	"github.com/platacard/terraform-provider-temporal/internal/provider"
 
 	"github.com/hashicorp/terraform-plugin-framework/providerserver"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"

@@ -1,4 +1,4 @@
-module terraform-provider-temporal
+module github.com/platacard/terraform-provider-temporal
 
 go 1.24.0
 

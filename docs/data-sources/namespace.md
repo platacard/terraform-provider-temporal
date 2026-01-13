@@ -34,7 +34,7 @@ data "temporal_namespace" "example" {
 ### Read-Only
 
 - `active_cluster_name` (String) Active Cluster Name
-- `clusters` (List of String) Clusters 
+- `clusters` (List of String) Clusters
 - `description` (String) Namespace Description
 - `history_archival_state` (String) History Archival State
 - `id` (String) Namespace identifier

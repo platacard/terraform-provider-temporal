@@ -172,6 +172,8 @@ Optional:
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # A schedule can be imported by specifying 'namespace:schedule_id'
 terraform import temporal_schedule.example_schedule default:example

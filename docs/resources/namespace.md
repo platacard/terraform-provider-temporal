@@ -32,7 +32,7 @@ resource "temporal_namespace" "example" {
 ### Optional
 
 - `active_cluster_name` (String) Active Cluster Name
-- `clusters` (List of String) Clusters 
+- `clusters` (List of String) Clusters
 - `description` (String) Namespace Description
 - `history_archival_state` (String) History Archival State
 - `history_archival_uri` (String) History Archival URI
@@ -48,6 +48,8 @@ resource "temporal_namespace" "example" {
 ## Import
 
 Import is supported using the following syntax:
+
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
 # A Namespace can be imported by specifying the name.

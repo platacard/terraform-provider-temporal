@@ -43,6 +43,8 @@ resource "temporal_search_attribute" "example_search_attribute_no_namespace" {
 
 Import is supported using the following syntax:
 
+The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
+
 ```shell
 # A search attribute can be imported by specifying 'namespace:search_attibute_name'
 terraform import temporal_search_attribute.example_search_attribute default:example

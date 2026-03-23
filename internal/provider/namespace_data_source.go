@@ -179,7 +179,7 @@ func namespaceToNamespaceDataSourceModel(ctx context.Context, ns *workflowservic
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.Int64Value(int64(ns.Config.WorkflowExecutionRetentionTtl.AsDuration().Hours() / 24)),
+		Retention:               types.Int64Value(int64(ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration().Hours() / 24)),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(ns.Config.GetHistoryArchivalState().String()),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),
@@ -194,6 +194,13 @@ func namespaceToNamespaceDataSourceModel(ctx context.Context, ns *workflowservic
 			return nil, diags
 		}
 		data.Clusters = clustersList
+	} else {
+		emptyList, emptyDiags := types.ListValueFrom(ctx, types.StringType, []string{})
+		diags.Append(emptyDiags...)
+		if diags.HasError() {
+			return nil, diags
+		}
+		data.Clusters = emptyList
 	}
 	return data, diags
 }

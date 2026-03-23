@@ -493,6 +493,13 @@ func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *
 			return diags
 		}
 		data.Clusters = clustersList
+	} else {
+		emptyList, emptyDiags := types.ListValueFrom(ctx, types.StringType, []string{})
+		diags.Append(emptyDiags...)
+		if diags.HasError() {
+			return diags
+		}
+		data.Clusters = emptyList
 	}
 	return diags
 }

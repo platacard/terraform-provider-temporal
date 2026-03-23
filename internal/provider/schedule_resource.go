@@ -530,18 +530,23 @@ func (r *ScheduleResource) Read(ctx context.Context, req resource.ReadRequest, r
 		if describeResp.Schedule.Action != nil {
 			data.Action = convertScheduleAction(describeResp.Schedule.Action)
 		}
+
+		data.State = &ScheduleStateModel{
+			Paused:           types.BoolValue(describeResp.Schedule.State.GetPaused()),
+			LimitedActions:   types.BoolValue(describeResp.Schedule.State.GetLimitedActions()),
+			RemainingActions: types.Int64Value(describeResp.Schedule.State.GetRemainingActions()),
+			Notes:            types.StringValue(describeResp.Schedule.State.GetNotes()),
+		}
+
+		if describeResp.Schedule.Policies != nil {
+			data.Policy = &SchedulePolicyModel{
+				Overlap:        types.StringValue(describeResp.Schedule.Policies.OverlapPolicy.String()),
+				CatchupWindow:  types.StringValue(formatDurationCanonical(describeResp.Schedule.Policies.CatchupWindow)),
+				PauseOnFailure: types.BoolValue(describeResp.Schedule.Policies.GetPauseOnFailure()),
+			}
+		}
 	}
-	data.State = &ScheduleStateModel{
-		Paused:           types.BoolValue(describeResp.Schedule.State.GetPaused()),
-		LimitedActions:   types.BoolValue(describeResp.Schedule.State.GetLimitedActions()),
-		RemainingActions: types.Int64Value(describeResp.Schedule.State.GetRemainingActions()),
-		Notes:            types.StringValue(describeResp.Schedule.State.GetNotes()),
-	}
-	data.Policy = &SchedulePolicyModel{
-		Overlap:        types.StringValue(describeResp.Schedule.Policies.OverlapPolicy.String()),
-		CatchupWindow:  types.StringValue(formatDurationCanonical(describeResp.Schedule.Policies.CatchupWindow)),
-		PauseOnFailure: types.BoolValue(describeResp.Schedule.Policies.GetPauseOnFailure()),
-	}
+
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)
 
 }
@@ -957,7 +962,7 @@ func convertScheduleSpec(spec *schedulev1.ScheduleSpec) *ScheduleSpecModel {
 	}
 
 	if spec.Jitter != nil {
-		tfSpec.Jitter = types.StringValue(spec.Jitter.String())
+		tfSpec.Jitter = types.StringValue(formatDurationCanonical(spec.Jitter))
 	}
 
 	return tfSpec

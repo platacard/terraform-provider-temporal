@@ -22,7 +22,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
-	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/clientcredentials"
 	"google.golang.org/grpc"
 	grpcCreds "google.golang.org/grpc/credentials"
@@ -349,27 +348,23 @@ func New(version string) func() provider.Provider {
 	}
 }
 
-// GetToken retrieves an OAuth token using client credentials.
-func GetToken(clientID, clientSecret, tokenURL, audience string) (*oauth2.Token, error) {
-	clientCredentials := clientcredentials.Config{
+// CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
+// It uses a TokenSource so the token is automatically refreshed when it expires.
+func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL string, scopes []string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+	cfg := clientcredentials.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		TokenURL:     tokenURL,
-		Scopes:       strings.Split(audience, ","),
+		Scopes:       scopes,
 	}
+	ts := cfg.TokenSource(context.Background())
 
-	token, err := clientCredentials.Token(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve token: %v", err)
-	}
-
-	return token, nil
-}
-
-// CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
-func CreateAuthenticatedClient(endpoint string, token *oauth2.Token, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
 	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials), grpc.WithUnaryInterceptor(
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+			token, err := ts.Token()
+			if err != nil {
+				return fmt.Errorf("failed to retrieve OAuth token: %w", err)
+			}
 			newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
 			return invoker(newCtx, method, req, reply, cc, opts...)
 		},
@@ -419,12 +414,7 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 	}
 
 	if clientID != "" {
-		token, err := GetToken(clientID, clientSecret, tokenURL, audience)
-		if err != nil {
-			return nil, err
-		}
-
-		return CreateAuthenticatedClient(endpoint, token, credentials)
+		return CreateAuthenticatedClient(endpoint, clientID, clientSecret, tokenURL, strings.Split(audience, ","), credentials)
 	} else if useTLS {
 		return CreateSecureClient(endpoint, credentials)
 	}

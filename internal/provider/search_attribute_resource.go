@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"github.com/jpillora/maplock"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/operatorservice/v1"
@@ -24,31 +25,52 @@ var (
 	_ resource.Resource                = &SearchAttributeResource{}
 	_ resource.ResourceWithConfigure   = &SearchAttributeResource{}
 	_ resource.ResourceWithImportState = &SearchAttributeResource{}
+
+	// namespaceLocks serializes search attribute mutations per namespace.
+	// Concurrent AddSearchAttributes calls to the same namespace return success
+	// but only the last write persists — the others are silently lost.
+	namespaceLocks = maplock.New()
 )
 
-// AwaitAddSearchAttributes waits for the completion of AddSearchAttributesRequest using ListSearchAttributes.
-func AwaitAddSearchAttributes(ctx context.Context, operatorClient operatorservice.OperatorServiceClient, data SearchAttributeResourceModel) error {
+const (
+	// searchAttributeAwaitTimeout is the maximum time to wait for a search
+	// attribute to appear after calling AddSearchAttributes.
+	searchAttributeAwaitTimeout = 1 * time.Minute
+)
+
+// awaitSearchAttribute polls ListSearchAttributes until the named attribute
+// appears in CustomAttributes, or the timeout expires.
+func awaitSearchAttribute(ctx context.Context, client operatorservice.OperatorServiceClient, data SearchAttributeResourceModel, timeout time.Duration) error {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+
+	deadline := time.After(timeout)
 
 	for {
 		select {
 		case <-ticker.C:
-			// Verify attribute creation
-			attributes, err := operatorClient.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
+			attributes, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
 				Namespace: data.Namespace.ValueString(),
 			})
 			if err != nil {
 				return err
 			}
-
 			if _, ok := attributes.CustomAttributes[data.Name.ValueString()]; ok {
 				return nil
 			}
+		case <-deadline:
+			return fmt.Errorf("timed out waiting for search attribute %q to appear after %s", data.Name.ValueString(), timeout)
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
+}
+
+// withNamespaceLock serializes operations on a given namespace.
+func withNamespaceLock(ns string, f func()) {
+	namespaceLocks.Lock(ns)
+	defer func() { _ = namespaceLocks.Unlock(ns) }()
+	f()
 }
 
 // NewSearchAttributeResource creates a new instance of SearchAttributeResource.
@@ -136,42 +158,21 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 
-	// Check if the attribute already exists in the custom attributes
-	// The API indicates that this should be handled by the AddSearchAttributes() method, but docs seem to be out of date
-	// Support thread: https://temporalio.slack.com/archives/CTDTU3J4T/p1721255485197359
-
-	existingAttrs, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
-		Namespace: data.Namespace.ValueString(),
+	// Serialize the full create cycle per namespace. Temporal's AddSearchAttributes
+	// performs a non-atomic read-modify-write on cluster metadata — concurrent calls
+	// return success but silently lose updates. The lock covers check + add + await
+	// so the next resource only starts after the previous one is fully confirmed.
+	var createErr error
+	withNamespaceLock(data.Namespace.ValueString(), func() {
+		createErr = r.createSearchAttribute(ctx, client, data)
 	})
-	if err != nil {
-		resp.Diagnostics.AddError("Client Error", "Failed to list existing search attributes: "+err.Error())
-		return
-	}
-	if _, exists := existingAttrs.CustomAttributes[data.Name.ValueString()]; exists {
-		resp.Diagnostics.AddError("Already Exists", "Search attribute with the provided name already exists and cannot be created again.")
-		return
-	}
 
-	// Create attribute
-	indexedValueType, _ := enums.IndexedValueTypeFromString(data.Type.ValueString())
-
-	request := &operatorservice.AddSearchAttributesRequest{
-		Namespace:        data.Namespace.ValueString(),
-		SearchAttributes: map[string]enums.IndexedValueType{data.Name.ValueString(): indexedValueType},
-	}
-	_, err = client.AddSearchAttributes(ctx, request)
-	if err != nil {
-		if _, ok := err.(*serviceerror.AlreadyExists); ok {
-			resp.Diagnostics.AddError("Request Error", "Search attribute with that name is already registered: "+err.Error())
-			return
+	if createErr != nil {
+		if _, ok := createErr.(*serviceerror.AlreadyExists); ok {
+			resp.Diagnostics.AddError("Request Error", "Search attribute with that name is already registered: "+createErr.Error())
+		} else {
+			resp.Diagnostics.AddError("Request error", "Search attribute creation failed: "+createErr.Error())
 		}
-		resp.Diagnostics.AddError("Request error", "Search attribute creation failed: "+err.Error())
-		return
-	}
-
-	err = AwaitAddSearchAttributes(ctx, client, data)
-	if err != nil {
-		resp.Diagnostics.AddError("Request Error", "Error awaiting results: "+err.Error())
 		return
 	}
 
@@ -182,6 +183,39 @@ func (r *SearchAttributeResource) Create(ctx context.Context, req resource.Creat
 	}
 
 	tflog.Info(ctx, fmt.Sprintf("The search attribute: %s of type %s is successfully created", data.Name, data.Type.String()))
+}
+
+// createSearchAttribute performs the check-then-add-then-await sequence.
+// Must be called under the namespace lock.
+func (r *SearchAttributeResource) createSearchAttribute(
+	ctx context.Context,
+	client operatorservice.OperatorServiceClient,
+	data SearchAttributeResourceModel,
+) error {
+	// Check if the attribute already exists in the custom attributes
+	existingAttrs, err := client.ListSearchAttributes(ctx, &operatorservice.ListSearchAttributesRequest{
+		Namespace: data.Namespace.ValueString(),
+	})
+	if err != nil {
+		return err
+	}
+	if _, exists := existingAttrs.CustomAttributes[data.Name.ValueString()]; exists {
+		return &serviceerror.AlreadyExists{Message: "search attribute already exists"}
+	}
+
+	// Create attribute
+	indexedValueType, _ := enums.IndexedValueTypeFromString(data.Type.ValueString())
+
+	_, err = client.AddSearchAttributes(ctx, &operatorservice.AddSearchAttributesRequest{
+		Namespace:        data.Namespace.ValueString(),
+		SearchAttributes: map[string]enums.IndexedValueType{data.Name.ValueString(): indexedValueType},
+	})
+	if err != nil {
+		return err
+	}
+
+	// Wait for the attribute to become visible.
+	return awaitSearchAttribute(ctx, client, data, searchAttributeAwaitTimeout)
 }
 
 // Read is responsible for reading the current state of a Temporal search attribute.
@@ -249,20 +283,21 @@ func (r *SearchAttributeResource) Delete(ctx context.Context, req resource.Delet
 		return
 	}
 
-	// Delete request
-	request := &operatorservice.RemoveSearchAttributesRequest{
-		Namespace:        data.Namespace.ValueString(),
-		SearchAttributes: []string{data.Name.ValueString()},
-	}
+	// Serialize under namespace lock to prevent metadata races.
+	var deleteErr error
+	withNamespaceLock(data.Namespace.ValueString(), func() {
+		_, deleteErr = client.RemoveSearchAttributes(ctx, &operatorservice.RemoveSearchAttributesRequest{
+			Namespace:        data.Namespace.ValueString(),
+			SearchAttributes: []string{data.Name.ValueString()},
+		})
+	})
 
-	_, err := client.RemoveSearchAttributes(ctx, request)
-
-	if err != nil {
-		if _, ok := err.(*serviceerror.NotFound); ok {
-			resp.Diagnostics.AddError("Request error", "Search attribute not found: "+err.Error())
+	if deleteErr != nil {
+		if _, ok := deleteErr.(*serviceerror.NotFound); ok {
+			resp.Diagnostics.AddError("Request error", "Search attribute not found: "+deleteErr.Error())
 			return
 		}
-		resp.Diagnostics.AddError("Request error", "Unable to delete search attribute "+err.Error())
+		resp.Diagnostics.AddError("Request error", "Unable to delete search attribute "+deleteErr.Error())
 		return
 	}
 

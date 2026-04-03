@@ -76,6 +76,69 @@ func TestAccSearchAttributeResource(t *testing.T) {
 	})
 }
 
+// TestAccSearchAttributeResource_Multiple verifies that multiple search attributes
+// can be created in a single apply. This exercises the namespace-level lock that
+// prevents lost updates from concurrent AddSearchAttributes calls.
+func TestAccSearchAttributeResource_Multiple(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create multiple search attributes concurrently
+			{
+				Config: providerConfig + `
+				resource "temporal_search_attribute" "multi_1" {
+					namespace = "default"
+					name      = "multiTestAttr1"
+					type      = "Keyword"
+				}
+				resource "temporal_search_attribute" "multi_2" {
+					namespace = "default"
+					name      = "multiTestAttr2"
+					type      = "Int"
+				}
+				resource "temporal_search_attribute" "multi_3" {
+					namespace = "default"
+					name      = "multiTestAttr3"
+					type      = "Bool"
+				}`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_1", "name", "multiTestAttr1"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_1", "type", "Keyword"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_2", "name", "multiTestAttr2"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_2", "type", "Int"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_3", "name", "multiTestAttr3"),
+					resource.TestCheckResourceAttr("temporal_search_attribute.multi_3", "type", "Bool"),
+				),
+			},
+			// Verify all attributes survive a plan (read works correctly)
+			{
+				Config: providerConfig + `
+				resource "temporal_search_attribute" "multi_1" {
+					namespace = "default"
+					name      = "multiTestAttr1"
+					type      = "Keyword"
+				}
+				resource "temporal_search_attribute" "multi_2" {
+					namespace = "default"
+					name      = "multiTestAttr2"
+					type      = "Int"
+				}
+				resource "temporal_search_attribute" "multi_3" {
+					namespace = "default"
+					name      = "multiTestAttr3"
+					type      = "Bool"
+				}`,
+				PlanOnly: true,
+			},
+			// Destroy all
+			{
+				Config: providerConfig,
+				Check:  testAccCheckExampleResourceDestroy,
+			},
+		},
+	})
+}
+
 // Verifies the attributes of a resource post-import.
 func checkImportedResourceAttributes(states []*terraform.InstanceState) error {
 	if len(states) == 0 {

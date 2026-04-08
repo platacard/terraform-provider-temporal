@@ -9,7 +9,7 @@ import (
 )
 
 // TestConvertScheduleSpec_NilSpec verifies that convertScheduleSpec returns nil
-// without panicking when called with a nil spec
+// without panicking when called with a nil spec.
 func TestConvertScheduleSpec_NilSpec(t *testing.T) {
 	model := convertScheduleSpec(nil)
 	if model != nil {
@@ -18,7 +18,7 @@ func TestConvertScheduleSpec_NilSpec(t *testing.T) {
 }
 
 // TestConvertScheduleSpec_NilJitter verifies that an absent Jitter field results
-// in a null Terraform value rather than a panic
+// in a null Terraform value rather than a panic.
 func TestConvertScheduleSpec_NilJitter(t *testing.T) {
 	spec := &schedulev1.ScheduleSpec{TimezoneName: "UTC"}
 	model := convertScheduleSpec(spec)
@@ -32,7 +32,7 @@ func TestConvertScheduleSpec_NilJitter(t *testing.T) {
 
 // TestConvertScheduleSpec_JitterRoundtrip verifies that the Jitter field is
 // serialized as a human-readable duration string ("5m") rather than the protobuf
-// text format ("seconds:300 nanos:0"), which caused an infinite plan/apply
+// text format ("seconds:300 nanos:0"), which caused an infinite plan/apply.
 func TestConvertScheduleSpec_JitterRoundtrip(t *testing.T) {
 	spec := &schedulev1.ScheduleSpec{
 		Jitter: durationpb.New(5 * time.Minute),
@@ -51,7 +51,7 @@ func TestConvertScheduleSpec_JitterRoundtrip(t *testing.T) {
 }
 
 // TestConvertFromTemporalSchedule_NilSchedule verifies that ConvertFromTemporalSchedule
-// returns an error for a nil schedule without panicking
+// returns an error for a nil schedule without panicking.
 func TestConvertFromTemporalSchedule_NilSchedule(t *testing.T) {
 	_, err := ConvertFromTemporalSchedule("id", "ns", nil)
 	if err == nil {
@@ -60,7 +60,7 @@ func TestConvertFromTemporalSchedule_NilSchedule(t *testing.T) {
 }
 
 // TestConvertFromTemporalSchedule_NilSpecAndAction verifies that a schedule with
-// nil Spec and Action fields does not panic and leaves the model fields nil
+// nil Spec and Action fields does not panic and leaves the model fields nil.
 func TestConvertFromTemporalSchedule_NilSpecAndAction(t *testing.T) {
 	sched := &schedulev1.Schedule{}
 	model, err := ConvertFromTemporalSchedule("id", "default", sched)

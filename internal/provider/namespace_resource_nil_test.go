@@ -12,7 +12,7 @@ import (
 // TestUpdateModelFromSpec_EmptyClusters verifies that updateModelFromSpec sets
 // Clusters to a typed empty list (not a zero-value types.List{}) when the
 // namespace has no replication clusters. A zero-value list has no element type
-// and causes Terraform Framework to detect a perpetual diff
+// and causes Terraform Framework to detect a perpetual diff.
 func TestUpdateModelFromSpec_EmptyClusters(t *testing.T) {
 	ctx := context.Background()
 	data := &NamespaceResourceModel{}

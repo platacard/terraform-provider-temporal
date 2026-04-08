@@ -32,7 +32,7 @@ func newMockTokenServer(t *testing.T, calls *int, expiresIn int) *httptest.Serve
 
 // TestCreateAuthenticatedClient_LazyTokenFetch verifies that CreateAuthenticatedClient
 // does not fetch an OAuth2 token at construction time. The token must only be
-// fetched when an actual gRPC call is made
+// fetched when an actual gRPC call is made.
 func TestCreateAuthenticatedClient_LazyTokenFetch(t *testing.T) {
 	calls := 0
 	srv := newMockTokenServer(t, &calls, 3600)
@@ -49,7 +49,7 @@ func TestCreateAuthenticatedClient_LazyTokenFetch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient returned error: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if calls != 0 {
 		t.Errorf("expected 0 token fetches at client creation, got %d — TokenSource must be lazy", calls)
@@ -59,7 +59,7 @@ func TestCreateAuthenticatedClient_LazyTokenFetch(t *testing.T) {
 // TestCreateAuthenticatedClient_TokenServerUnreachable verifies that
 // CreateAuthenticatedClient does not fail when the token server is unreachable.
 // Before the fix, GetToken() was called eagerly at startup and would have
-// returned an error here
+// returned an error here.
 func TestCreateAuthenticatedClient_TokenServerUnreachable(t *testing.T) {
 	conn, err := CreateAuthenticatedClient(
 		"localhost:9999",
@@ -72,13 +72,13 @@ func TestCreateAuthenticatedClient_TokenServerUnreachable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient must not fail at construction when token server is unreachable: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 }
 
 // TestCreateAuthenticatedClient_RefreshesExpiredToken verifies that the token
 // server is not called at construction even when tokens would expire immediately
 // (expires_in=0). The old code fetched the token once at startup; the new code
-// uses a TokenSource that refreshes lazily on each gRPC call
+// uses a TokenSource that refreshes lazily on each gRPC call.
 func TestCreateAuthenticatedClient_RefreshesExpiredToken(t *testing.T) {
 	calls := 0
 	srv := newMockTokenServer(t, &calls, 0) // expires_in=0 = token expires immediately
@@ -95,7 +95,7 @@ func TestCreateAuthenticatedClient_RefreshesExpiredToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient returned error: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	if calls != 0 {
 		t.Errorf("expected 0 calls at construction, got %d", calls)

@@ -11,7 +11,7 @@ import (
 
 // TestNamespaceDataSourceModel_NilConfig verifies that namespaceToNamespaceDataSourceModel
 // does not panic when ns.Config is nil. Before the fix the function accessed
-// ns.Config.WorkflowExecutionRetentionTtl directly, which panicked
+// ns.Config.WorkflowExecutionRetentionTtl directly, which panicked.
 func TestNamespaceDataSourceModel_NilConfig(t *testing.T) {
 	ctx := context.Background()
 	ns := &workflowservice.DescribeNamespaceResponse{
@@ -34,7 +34,7 @@ func TestNamespaceDataSourceModel_NilConfig(t *testing.T) {
 
 // TestNamespaceDataSourceModel_EmptyClusters verifies that the Clusters field is
 // a typed empty list (not null) when no clusters are configured. A null or
-// zero-value list causes Terraform Framework to detect a perpetual diff
+// zero-value list causes Terraform Framework to detect a perpetual diff.
 func TestNamespaceDataSourceModel_EmptyClusters(t *testing.T) {
 	ctx := context.Background()
 	ns := &workflowservice.DescribeNamespaceResponse{

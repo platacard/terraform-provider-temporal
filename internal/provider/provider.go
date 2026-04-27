@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ type temporalProviderModel struct {
 	ClientID     types.String `tfsdk:"client_id"`
 	TokenURL     types.String `tfsdk:"token_url"`
 	Audience     types.String `tfsdk:"audience"`
+	Scopes       types.List   `tfsdk:"scopes"`
 	Insecure     types.Bool   `tfsdk:"insecure"`
 	TLS          types.Object `tfsdk:"tls"`
 }
@@ -129,6 +131,11 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 					stringvalidator.AlsoRequires(path.MatchRoot("token_url")),
 				},
 			},
+			"scopes": schema.ListAttribute{
+				ElementType: types.StringType,
+				Optional:    true,
+				Description: `OAuth2 scopes requested when fetching a token. Defaults to ["openid", "profile", "email"].`,
+			},
 			"insecure": schema.BoolAttribute{
 				Optional:    true,
 				Description: "Use insecure connection",
@@ -202,6 +209,14 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_AUDIENCE environment variable.",
 		)
 	}
+	if config.Scopes.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("scopes"),
+			"Unknown Scopes",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the OAuth2 Scopes. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_SCOPES environment variable.",
+		)
+	}
 	if config.Insecure.IsUnknown() {
 		resp.Diagnostics.AddAttributeError(
 			path.Root("insecure"),
@@ -222,6 +237,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	clientID := os.Getenv("TEMPORAL_CLIENT_ID")
 	clientSecret := os.Getenv("TEMPORAL_CLIENT_SECRET")
 	audience := os.Getenv("TEMPORAL_AUDIENCE")
+	scopes := parseScopesEnv(os.Getenv("TEMPORAL_SCOPES"))
 	insecure, err := getBoolEnv("TEMPORAL_INSECURE")
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(
@@ -254,6 +270,17 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	}
 	if !config.Audience.IsNull() {
 		audience = config.Audience.ValueString()
+	}
+	if !config.Scopes.IsNull() {
+		scopes = nil
+		diags := config.Scopes.ElementsAs(ctx, &scopes, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
+	if len(scopes) == 0 {
+		scopes = []string{"openid", "profile", "email"}
 	}
 	if !config.Insecure.IsNull() {
 		insecure = config.Insecure.ValueBool()
@@ -291,10 +318,6 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 		port = "7233"
 	}
 
-	if audience == "" {
-		audience = "openid,profile,email"
-	}
-
 	// Create a new Temporal client using the configuration values
 	ctx = tflog.SetField(ctx, "temporal_host", host)
 	ctx = tflog.SetField(ctx, "temporal_port", port)
@@ -302,7 +325,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 	tflog.Debug(ctx, "Creating Temporal client")
 	tflog.Debug(ctx, "Use TLS? "+strconv.FormatBool(useTLS))
-	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName)
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, scopes, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -350,12 +373,15 @@ func New(version string) func() provider.Provider {
 
 // CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
 // It uses a TokenSource so the token is automatically refreshed when it expires.
-func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL string, scopes []string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL, audience string, scopes []string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
 	cfg := clientcredentials.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 		TokenURL:     tokenURL,
 		Scopes:       scopes,
+	}
+	if audience != "" {
+		cfg.EndpointParams = url.Values{"audience": {audience}}
 	}
 	ts := cfg.TokenSource(context.Background())
 
@@ -382,7 +408,7 @@ func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCreden
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.
-func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string) (*grpc.ClientConn, error) {
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience string, scopes []string, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string) (*grpc.ClientConn, error) {
 	var credentials grpcCreds.TransportCredentials
 
 	switch insecure {
@@ -414,7 +440,7 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience, endpoint strin
 	}
 
 	if clientID != "" {
-		return CreateAuthenticatedClient(endpoint, clientID, clientSecret, tokenURL, strings.Split(audience, ","), credentials)
+		return CreateAuthenticatedClient(endpoint, clientID, clientSecret, tokenURL, audience, scopes, credentials)
 	} else if useTLS {
 		return CreateSecureClient(endpoint, credentials)
 	}
@@ -427,6 +453,24 @@ func getCA(caCerts []byte) *x509.CertPool {
 	caCertPool := x509.NewCertPool()
 	caCertPool.AppendCertsFromPEM(caCerts)
 	return caCertPool
+}
+
+// parseScopesEnv splits a comma-separated env var value into trimmed scope strings.
+func parseScopesEnv(value string) []string {
+	if value == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	scopes := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if trimmed := strings.TrimSpace(p); trimmed != "" {
+			scopes = append(scopes, trimmed)
+		}
+	}
+	if len(scopes) == 0 {
+		return nil
+	}
+	return scopes
 }
 
 func getBoolEnv(key string) (result bool, err error) {

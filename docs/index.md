@@ -31,6 +31,7 @@ provider "temporal" {
   client_secret = var.temporal_client_secret
   token_url     = "https://auth.company.com/oauth/token"
   audience      = "temporal-api"
+  scopes        = ["openid", "profile", "email"]
 }
 ```
 
@@ -62,6 +63,7 @@ The provider supports configuration via environment variables:
 | `TEMPORAL_CLIENT_SECRET` | OAuth2 client secret                 |
 | `TEMPORAL_TOKEN_URL`     | OAuth2 token endpoint                |
 | `TEMPORAL_AUDIENCE`      | OAuth2 audience claim                |
+| `TEMPORAL_SCOPES`        | OAuth2 scopes (comma-separated)      |
 | `TEMPORAL_INSECURE`      | Use insecure connection (true/false) |
 
 ## Example Usage
@@ -100,6 +102,7 @@ resource "temporal_namespace" "example" {
 - `host` (String) The Temporal server host.
 - `insecure` (Boolean) Use insecure connection
 - `port` (String) The Temporal server port.
+- `scopes` (List of String) OAuth2 scopes requested when fetching a token. Defaults to ["openid", "profile", "email"].
 - `tls` (Block, Optional) TLS Configuration for the Temporal server (see [below for nested schema](#nestedblock--tls))
 - `token_url` (String) Oauth2 server URL to fetch token from
 

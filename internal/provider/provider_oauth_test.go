@@ -50,6 +50,7 @@ func TestCreateAuthenticatedClient_LazyTokenFetch(t *testing.T) {
 		"test-audience",
 		[]string{"scope"},
 		grpcInsec.NewCredentials(),
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient returned error: %v", err)
@@ -70,6 +71,7 @@ func TestCreateAuthenticatedClient_TokenServerUnreachable(t *testing.T) {
 		"test-audience",
 		[]string{"scope"},
 		grpcInsec.NewCredentials(),
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient must not fail at construction when token server is unreachable: %v", err)
@@ -90,6 +92,7 @@ func TestCreateAuthenticatedClient_RefreshesExpiredToken(t *testing.T) {
 		"test-audience",
 		[]string{"scope"},
 		grpcInsec.NewCredentials(),
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient returned error: %v", err)
@@ -147,6 +150,7 @@ func TestCreateAuthenticatedClient_PassesAudienceInTokenRequest(t *testing.T) {
 		wantAudience,
 		wantScopes,
 		grpcInsec.NewCredentials(),
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateAuthenticatedClient: %v", err)
@@ -219,6 +223,7 @@ func TestCreateGRPCClient_DoesNotReflectAudienceIntoScopes(t *testing.T) {
 		true,
 		false,
 		"", "", "", "",
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateGRPCClient: %v", err)

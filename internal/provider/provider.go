@@ -51,6 +51,7 @@ type temporalProviderModel struct {
 	Scopes       types.List   `tfsdk:"scopes"`
 	Insecure     types.Bool   `tfsdk:"insecure"`
 	TLS          types.Object `tfsdk:"tls"`
+	GrpcMetadata types.Map    `tfsdk:"grpc_metadata"`
 }
 
 // Metadata assigns the provider's name and version.
@@ -140,6 +141,12 @@ func (p *TemporalProvider) Schema(ctx context.Context, req provider.SchemaReques
 				Optional:    true,
 				Description: "Use insecure connection",
 			},
+			"grpc_metadata": schema.MapAttribute{
+				ElementType: types.StringType,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "Static gRPC metadata appended to every outgoing call (case-insensitive keys, string values). Useful for reverse-proxy authentication that lives at the HTTP/2 header layer rather than the OAuth Bearer layer — for example Cloudflare Access service tokens (`cf-access-client-id` / `cf-access-client-secret`), Tailscale Funnel, or AWS WAF custom rules. Marked sensitive because credentials are common values; the map is also overrideable via `TEMPORAL_GRPC_METADATA` (comma-separated `k=v` pairs).",
+			},
 		},
 	}
 }
@@ -225,6 +232,14 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_INSECURE environment variable.",
 		)
 	}
+	if config.GrpcMetadata.IsUnknown() {
+		resp.Diagnostics.AddAttributeError(
+			path.Root("grpc_metadata"),
+			"Unknown gRPC Metadata",
+			"The provider cannot create the Temporal API client as there is an unknown configuration value for the gRPC metadata map. "+
+				"Either target apply the source of the value first, set the value statically in the configuration, or use the TEMPORAL_GRPC_METADATA environment variable.",
+		)
+	}
 	if resp.Diagnostics.HasError() {
 		return
 	}
@@ -238,6 +253,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	clientSecret := os.Getenv("TEMPORAL_CLIENT_SECRET")
 	audience := os.Getenv("TEMPORAL_AUDIENCE")
 	scopes := parseScopesEnv(os.Getenv("TEMPORAL_SCOPES"))
+	grpcMetadata := parseGrpcMetadataEnv(os.Getenv("TEMPORAL_GRPC_METADATA"))
 	insecure, err := getBoolEnv("TEMPORAL_INSECURE")
 	if err != nil {
 		resp.Diagnostics.AddAttributeError(
@@ -282,6 +298,14 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 	if len(scopes) == 0 {
 		scopes = []string{"openid", "profile", "email"}
 	}
+	if !config.GrpcMetadata.IsNull() {
+		grpcMetadata = map[string]string{}
+		diags := config.GrpcMetadata.ElementsAs(ctx, &grpcMetadata, false)
+		resp.Diagnostics.Append(diags...)
+		if resp.Diagnostics.HasError() {
+			return
+		}
+	}
 	if !config.Insecure.IsNull() {
 		insecure = config.Insecure.ValueBool()
 	}
@@ -325,7 +349,7 @@ func (p *TemporalProvider) Configure(ctx context.Context, req provider.Configure
 
 	tflog.Debug(ctx, "Creating Temporal client")
 	tflog.Debug(ctx, "Use TLS? "+strconv.FormatBool(useTLS))
-	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, scopes, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName)
+	client, err := CreateGRPCClient(clientID, clientSecret, tokenURL, audience, scopes, endpoint, insecure, useTLS, certString, keyString, caCerts, serverName, grpcMetadata)
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Temporal API Client",
@@ -371,9 +395,99 @@ func New(version string) func() provider.Provider {
 	}
 }
 
+// metadataPairs flattens a metadata map into the alternating
+// key,value,key,value... slice that metadata.AppendToOutgoingContext expects.
+// Returns nil for empty input so callers can elide the interceptor entirely.
+func metadataPairs(md map[string]string) []string {
+	if len(md) == 0 {
+		return nil
+	}
+	out := make([]string, 0, 2*len(md))
+	for k, v := range md {
+		out = append(out, k, v)
+	}
+	return out
+}
+
+// metadataUnaryInterceptor returns a UnaryClientInterceptor that appends the
+// given metadata to every outgoing call's context, or nil if md is empty.
+func metadataUnaryInterceptor(md map[string]string) grpc.UnaryClientInterceptor {
+	pairs := metadataPairs(md)
+	if pairs == nil {
+		return nil
+	}
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// metadataStreamInterceptor is the streaming counterpart of
+// metadataUnaryInterceptor. Temporal admin operations are unary today, but
+// future Temporal SDK versions may use streams (long polls); this keeps the
+// metadata applied uniformly.
+func metadataStreamInterceptor(md map[string]string) grpc.StreamClientInterceptor {
+	pairs := metadataPairs(md)
+	if pairs == nil {
+		return nil
+	}
+	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
+		ctx = metadata.AppendToOutgoingContext(ctx, pairs...)
+		return streamer(ctx, desc, cc, method, opts...)
+	}
+}
+
+// dialOptionsForMetadata returns gRPC dial options that inject the given
+// metadata on every call (both unary and streaming). Returns nil slice for
+// empty input.
+func dialOptionsForMetadata(md map[string]string) []grpc.DialOption {
+	var opts []grpc.DialOption
+	if u := metadataUnaryInterceptor(md); u != nil {
+		opts = append(opts, grpc.WithChainUnaryInterceptor(u))
+	}
+	if s := metadataStreamInterceptor(md); s != nil {
+		opts = append(opts, grpc.WithChainStreamInterceptor(s))
+	}
+	return opts
+}
+
+// parseGrpcMetadataEnv parses the TEMPORAL_GRPC_METADATA env var. Format:
+// comma-separated `key=value` pairs (e.g.
+// "cf-access-client-id=abc,cf-access-client-secret=def"). Empty values and
+// malformed pairs are silently dropped — provider config takes precedence
+// anyway.
+func parseGrpcMetadataEnv(s string) map[string]string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	out := map[string]string{}
+	for _, p := range strings.Split(s, ",") {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		eq := strings.Index(p, "=")
+		if eq <= 0 {
+			continue
+		}
+		k := strings.TrimSpace(p[:eq])
+		v := strings.TrimSpace(p[eq+1:])
+		if k != "" && v != "" {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // CreateAuthenticatedClient creates a gRPC client with OAuth authentication.
 // It uses a TokenSource so the token is automatically refreshed when it expires.
-func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL, audience string, scopes []string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
+// Any extraMetadata is appended to every outgoing call alongside the OAuth
+// Authorization header.
+func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL, audience string, scopes []string, credentials grpcCreds.TransportCredentials, extraMetadata map[string]string) (*grpc.ClientConn, error) {
 	cfg := clientcredentials.Config{
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
@@ -385,30 +499,43 @@ func CreateAuthenticatedClient(endpoint string, clientID, clientSecret, tokenURL
 	}
 	ts := cfg.TokenSource(context.Background())
 
-	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials), grpc.WithUnaryInterceptor(
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-			token, err := ts.Token()
-			if err != nil {
-				return fmt.Errorf("failed to retrieve OAuth token: %w", err)
-			}
-			newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
-			return invoker(newCtx, method, req, reply, cc, opts...)
-		},
-	))
+	authInterceptor := func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		token, err := ts.Token()
+		if err != nil {
+			return fmt.Errorf("failed to retrieve OAuth token: %w", err)
+		}
+		newCtx := metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token.AccessToken)
+		return invoker(newCtx, method, req, reply, cc, opts...)
+	}
+
+	dialOpts := []grpc.DialOption{
+		grpc.WithTransportCredentials(credentials),
+		grpc.WithChainUnaryInterceptor(authInterceptor),
+	}
+	dialOpts = append(dialOpts, dialOptionsForMetadata(extraMetadata)...)
+	return grpc.NewClient(endpoint, dialOpts...)
 }
 
 // CreateSecureClient creates a gRPC client using mTLS without OAuth authentication.
-func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials))
+// Any extraMetadata is appended to every outgoing call.
+func CreateSecureClient(endpoint string, credentials grpcCreds.TransportCredentials, extraMetadata map[string]string) (*grpc.ClientConn, error) {
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(credentials)}
+	dialOpts = append(dialOpts, dialOptionsForMetadata(extraMetadata)...)
+	return grpc.NewClient(endpoint, dialOpts...)
 }
 
 // CreateInsecureClient creates a gRPC client without any authentication.
-func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCredentials) (*grpc.ClientConn, error) {
-	return grpc.NewClient(endpoint, grpc.WithTransportCredentials(credentials))
+// Any extraMetadata is appended to every outgoing call (useful when an
+// upstream reverse proxy provides the auth, e.g. Cloudflare Access service
+// tokens, even though this gRPC hop is plaintext).
+func CreateInsecureClient(endpoint string, credentials grpcCreds.TransportCredentials, extraMetadata map[string]string) (*grpc.ClientConn, error) {
+	dialOpts := []grpc.DialOption{grpc.WithTransportCredentials(credentials)}
+	dialOpts = append(dialOpts, dialOptionsForMetadata(extraMetadata)...)
+	return grpc.NewClient(endpoint, dialOpts...)
 }
 
 // CreateGRPCClient decides which gRPC client to create based on clientID.
-func CreateGRPCClient(clientID, clientSecret, tokenURL, audience string, scopes []string, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string) (*grpc.ClientConn, error) {
+func CreateGRPCClient(clientID, clientSecret, tokenURL, audience string, scopes []string, endpoint string, insecure bool, useTLS bool, certString string, keyString string, caCerts string, serverName string, grpcMetadata map[string]string) (*grpc.ClientConn, error) {
 	var credentials grpcCreds.TransportCredentials
 
 	switch insecure {
@@ -440,12 +567,12 @@ func CreateGRPCClient(clientID, clientSecret, tokenURL, audience string, scopes 
 	}
 
 	if clientID != "" {
-		return CreateAuthenticatedClient(endpoint, clientID, clientSecret, tokenURL, audience, scopes, credentials)
+		return CreateAuthenticatedClient(endpoint, clientID, clientSecret, tokenURL, audience, scopes, credentials, grpcMetadata)
 	} else if useTLS {
-		return CreateSecureClient(endpoint, credentials)
+		return CreateSecureClient(endpoint, credentials, grpcMetadata)
 	}
 
-	return CreateInsecureClient(endpoint, credentials)
+	return CreateInsecureClient(endpoint, credentials, grpcMetadata)
 }
 
 // Function to get CA certificates.

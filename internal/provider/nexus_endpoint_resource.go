@@ -127,8 +127,11 @@ func (r *NexusEndpointResource) Schema(ctx context.Context, req resource.SchemaR
 				},
 			},
 			"url_prefix": schema.StringAttribute{
-				MarkdownDescription: "Server-rendered URL prefix for invoking operations on this endpoint.",
+				MarkdownDescription: "Server-rendered URL prefix for invoking operations on this endpoint. Deterministic from `id`, which is itself stable across updates, so reuse the prior state value during plan to avoid surfacing a spurious `(known after apply)` on every in-place update.",
 				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 		},
 	}

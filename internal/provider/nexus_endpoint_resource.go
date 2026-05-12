@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -16,12 +18,33 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
 	commonv1 "go.temporal.io/api/common/v1"
 	nexusv1 "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
+)
+
+// Package-level attribute-type maps for the worker_target / external_target
+// nested attributes. Defined once and reused at every callsite (encode, decode,
+// data source) to keep the shape definition in one place.
+var (
+	workerTargetAttrTypes = map[string]attr.Type{
+		"namespace":  types.StringType,
+		"task_queue": types.StringType,
+	}
+
+	externalTargetAttrTypes = map[string]attr.Type{
+		"url": types.StringType,
+	}
+
+	// externalTargetURLRegex matches an http(s):// URL. The Nexus server
+	// dispatches external endpoints via HTTP, so allow both http and https
+	// at schema-validation time and let server policy reject plaintext if
+	// configured to. Caught at plan time rather than at apply.
+	externalTargetURLRegex = regexp.MustCompile(`(?i)^https?://`)
 )
 
 var (
@@ -51,19 +74,6 @@ type NexusEndpointResourceModel struct {
 	WorkerTarget   types.Object `tfsdk:"worker_target"`
 	ExternalTarget types.Object `tfsdk:"external_target"`
 	UrlPrefix      types.String `tfsdk:"url_prefix"`
-}
-
-func workerTargetAttrTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"namespace":  types.StringType,
-		"task_queue": types.StringType,
-	}
-}
-
-func externalTargetAttrTypes() map[string]attr.Type {
-	return map[string]attr.Type{
-		"url": types.StringType,
-	}
 }
 
 // Metadata sets the metadata for the nexus_endpoint resource.
@@ -121,8 +131,12 @@ func (r *NexusEndpointResource) Schema(ctx context.Context, req resource.SchemaR
 				Optional:            true,
 				Attributes: map[string]schema.Attribute{
 					"url": schema.StringAttribute{
-						MarkdownDescription: "URL to call.",
+						MarkdownDescription: "URL to call. Must start with `http://` or `https://`; the server typically requires HTTPS in production.",
 						Required:            true,
+						Validators: []validator.String{
+							stringvalidator.RegexMatches(externalTargetURLRegex,
+								"must start with http:// or https://"),
+						},
 					},
 				},
 			},
@@ -171,7 +185,7 @@ func (r *NexusEndpointResource) Create(ctx context.Context, req resource.CreateR
 	client := operatorservice.NewOperatorServiceClient(r.client)
 	createResp, err := client.CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{Spec: spec})
 	if err != nil {
-		resp.Diagnostics.AddError("Request error", "nexus endpoint creation failed: "+err.Error())
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("create nexus endpoint: %s", err))
 		return
 	}
 
@@ -196,7 +210,7 @@ func (r *NexusEndpointResource) Read(ctx context.Context, req resource.ReadReque
 			resp.State.RemoveResource(ctx)
 			return
 		}
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Nexus endpoint: %s", err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("read nexus endpoint: %s", err))
 		return
 	}
 
@@ -206,6 +220,13 @@ func (r *NexusEndpointResource) Read(ctx context.Context, req resource.ReadReque
 
 // Update modifies description and/or target. Name change forces replace via
 // the schema's RequiresReplace plan modifier, so we don't handle it here.
+//
+// Intentionally does NOT retry on conditional-update conflicts (gRPC
+// FailedPrecondition / "version mismatch"). Unlike `temporal_namespace`,
+// whose `config_version` bumps from cluster-internal frontend touches even
+// without user action, Nexus endpoint version increments only on real
+// UpdateNexusEndpoint calls, so a conflict here is a legitimate concurrent-
+// writer race that a retry could silently paper over. Surface the error.
 func (r *NexusEndpointResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
 	var plan NexusEndpointResourceModel
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
@@ -231,7 +252,7 @@ func (r *NexusEndpointResource) Update(ctx context.Context, req resource.UpdateR
 		Spec:    spec,
 	})
 	if err != nil {
-		resp.Diagnostics.AddError("Request error", "nexus endpoint update failed: "+err.Error())
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("update nexus endpoint: %s", err))
 		return
 	}
 
@@ -257,12 +278,20 @@ func (r *NexusEndpointResource) Delete(ctx context.Context, req resource.DeleteR
 			// Already gone — treat as success.
 			return
 		}
-		resp.Diagnostics.AddError("Request error", "nexus endpoint deletion failed: "+err.Error())
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("delete nexus endpoint: %s", err))
 		return
 	}
 }
 
-// ImportState accepts either an endpoint ID or a name. Read disambiguates.
+// ImportState accepts either an endpoint ID (UUID) or a name.
+//
+// We seed BOTH `id` and `name` with `req.ID` because we don't know which
+// form the user passed; the subsequent Read call disambiguates via
+// `getEndpointByIDOrName` (UUID-shape check → GetNexusEndpoint, else
+// ListNexusEndpoints by name). After Read, `id` holds the server-assigned
+// UUID and `name` holds the canonical name regardless of which form was
+// originally passed. The transient pre-Read state where one of the two
+// fields holds the wrong value is intentional and self-correcting.
 func (r *NexusEndpointResource) ImportState(ctx context.Context, req resource.ImportStateRequest, resp *resource.ImportStateResponse) {
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("id"), req.ID)...)
 	resp.Diagnostics.Append(resp.State.SetAttribute(ctx, path.Root("name"), req.ID)...)
@@ -328,8 +357,17 @@ func stringFromAttr(v attr.Value) string {
 // encodeDescription wraps a UTF-8 string in a Payload with metadata
 // {"encoding": "json/plain"} and a JSON-encoded string body, matching
 // the Temporal CLI's encoding for Nexus endpoint descriptions.
+//
+// json.Marshal of a string can technically return an error if the byte
+// sequence is not valid UTF-8 (it does NOT fail outright in that case —
+// it silently replaces with U+FFFD), so this is defensive: any returned
+// error indicates a hard runtime invariant violation (e.g. a json package
+// regression) and we panic rather than emit a corrupted payload.
 func encodeDescription(s string) *commonv1.Payload {
-	body, _ := json.Marshal(s) // string marshaling never fails
+	body, err := json.Marshal(s)
+	if err != nil {
+		panic(fmt.Sprintf("encodeDescription: json.Marshal of string failed (impossible by spec): %v", err))
+	}
 	return &commonv1.Payload{
 		Metadata: map[string][]byte{"encoding": []byte("json/plain")},
 		Data:     body,
@@ -352,6 +390,11 @@ func decodeDescription(p *commonv1.Payload) string {
 }
 
 // updateModelFromEndpoint populates the resource model from a server-returned Endpoint.
+//
+// Preserves null semantics for `description`: if the server returned no
+// description payload, the model field is set to types.StringNull() rather
+// than the empty-string value. This avoids a perpetual `null → ""` diff
+// on every plan for endpoints that genuinely have no description.
 func updateModelFromEndpoint(m *NexusEndpointResourceModel, ep *nexusv1.Endpoint) {
 	if ep == nil {
 		return
@@ -362,26 +405,30 @@ func updateModelFromEndpoint(m *NexusEndpointResourceModel, ep *nexusv1.Endpoint
 
 	spec := ep.GetSpec()
 	m.Name = types.StringValue(spec.GetName())
-	m.Description = types.StringValue(decodeDescription(spec.GetDescription()))
+	if desc := spec.GetDescription(); desc != nil {
+		m.Description = types.StringValue(decodeDescription(desc))
+	} else {
+		m.Description = types.StringNull()
+	}
 
 	tgt := spec.GetTarget()
 	switch {
 	case tgt.GetWorker() != nil:
-		obj, _ := types.ObjectValue(workerTargetAttrTypes(), map[string]attr.Value{
+		obj, _ := types.ObjectValue(workerTargetAttrTypes, map[string]attr.Value{
 			"namespace":  types.StringValue(tgt.GetWorker().GetNamespace()),
 			"task_queue": types.StringValue(tgt.GetWorker().GetTaskQueue()),
 		})
 		m.WorkerTarget = obj
-		m.ExternalTarget = types.ObjectNull(externalTargetAttrTypes())
+		m.ExternalTarget = types.ObjectNull(externalTargetAttrTypes)
 	case tgt.GetExternal() != nil:
-		obj, _ := types.ObjectValue(externalTargetAttrTypes(), map[string]attr.Value{
+		obj, _ := types.ObjectValue(externalTargetAttrTypes, map[string]attr.Value{
 			"url": types.StringValue(tgt.GetExternal().GetUrl()),
 		})
 		m.ExternalTarget = obj
-		m.WorkerTarget = types.ObjectNull(workerTargetAttrTypes())
+		m.WorkerTarget = types.ObjectNull(workerTargetAttrTypes)
 	default:
-		m.WorkerTarget = types.ObjectNull(workerTargetAttrTypes())
-		m.ExternalTarget = types.ObjectNull(externalTargetAttrTypes())
+		m.WorkerTarget = types.ObjectNull(workerTargetAttrTypes)
+		m.ExternalTarget = types.ObjectNull(externalTargetAttrTypes)
 	}
 }
 
@@ -426,8 +473,13 @@ func getEndpointByIDOrName(ctx context.Context, client operatorservice.OperatorS
 	return endpoints[0], nil
 }
 
-// looksLikeUUID does a cheap shape check (8-4-4-4-12 hex layout). Avoids
-// the cost of pulling in a UUID library just for this.
+// looksLikeUUID does a cheap shape check (8-4-4-4-12 lowercase hex layout).
+// Avoids the cost of pulling in a UUID library just for this.
+//
+// Restricted to lowercase hex because that's the canonical form the
+// Temporal server returns; an uppercase string is almost certainly a
+// mistyped name rather than an ID, so treating it as a name skips an
+// unnecessary GetNexusEndpoint round-trip that would 400 anyway.
 func looksLikeUUID(s string) bool {
 	if len(s) != 36 {
 		return false
@@ -439,7 +491,7 @@ func looksLikeUUID(s string) bool {
 				return false
 			}
 		default:
-			isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+			isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
 			if !isHex {
 				return false
 			}

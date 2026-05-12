@@ -60,7 +60,7 @@ resource "temporal_nexus_endpoint" "external_payments" {
 
 Required:
 
-- `url` (String) URL to call.
+- `url` (String) URL to call. Must start with `http://` or `https://`; the server typically requires HTTPS in production.
 
 
 <a id="nestedatt--worker_target"></a>

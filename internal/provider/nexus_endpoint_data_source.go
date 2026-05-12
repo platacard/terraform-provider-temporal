@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/datasource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -112,7 +111,7 @@ func (d *NexusEndpointDataSource) Read(ctx context.Context, req datasource.ReadR
 
 	endpoint, err := getEndpointByIDOrName(ctx, d.client, "", name)
 	if err != nil {
-		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read Nexus endpoint %q: %s", name, err))
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("read nexus endpoint %q: %s", name, err))
 		return
 	}
 
@@ -120,8 +119,8 @@ func (d *NexusEndpointDataSource) Read(ctx context.Context, req datasource.ReadR
 	// Reuse the resource model populator by mapping the data-source model
 	// onto the resource shape (identical fields).
 	resourceShape := &NexusEndpointResourceModel{
-		WorkerTarget:   types.ObjectNull(workerTargetAttrTypes()),
-		ExternalTarget: types.ObjectNull(externalTargetAttrTypes()),
+		WorkerTarget:   types.ObjectNull(workerTargetAttrTypes),
+		ExternalTarget: types.ObjectNull(externalTargetAttrTypes),
 	}
 	updateModelFromEndpoint(resourceShape, endpoint)
 
@@ -135,9 +134,3 @@ func (d *NexusEndpointDataSource) Read(ctx context.Context, req datasource.ReadR
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, data)...)
 }
-
-// Compile-time assertion that the data-source attr types match the resource's.
-var _ = func() bool {
-	var _ map[string]attr.Type = workerTargetAttrTypes()
-	return true
-}()

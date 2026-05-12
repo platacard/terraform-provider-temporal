@@ -1,5 +1,5 @@
 # Import by server-generated endpoint ID (preferred — stable across renames).
-terraform import temporal_nexus_endpoint.bilrost_notegen 425547bc-c673-4217-8d4e-581b853d5a01
+terraform import temporal_nexus_endpoint.order_processing 11111111-2222-3333-4444-555555555555
 
 # Or import by endpoint name (resolved via ListNexusEndpoints).
-terraform import temporal_nexus_endpoint.bilrost_notegen bilrost-notegen
+terraform import temporal_nexus_endpoint.order_processing order-processing

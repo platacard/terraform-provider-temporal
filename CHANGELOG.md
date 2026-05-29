@@ -1,3 +1,6 @@
-## 0.1.0 (Unreleased)
+# Changelog
 
-FEATURES:
+Release notes are published on the
+[GitHub Releases page](https://github.com/platacard/terraform-provider-temporal/releases)
+and generated automatically from commit history by GoReleaser (see the
+`changelog` block in `.goreleaser.yml`).

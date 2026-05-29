@@ -1,0 +1,105 @@
+# Reusable CI workflow: build, lint, docs-drift check, unit + acceptance tests.
+name: CI
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go mod download
+      - run: go build -v .
+      - name: Run linters
+        uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
+        with:
+          version: v2.9.0
+
+  generate:
+    name: Docs are up to date
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+      - run: go generate ./...
+      - name: git diff
+        run: |
+          git diff --compact-summary --exit-code || \
+            (echo; echo "Unexpected difference in directories after code generation. Run 'go generate ./...' command and commit."; exit 1)
+
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - run: go test -v -cover ./...
+
+  acceptance:
+    name: Acceptance Tests (Terraform ${{ matrix.terraform-version }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        terraform-version:
+          - '1.0.*'   # oldest lane: protocol-6.0 floor (Terraform 1.0+)
+          - '1.9.*'
+          - '1.12.*'
+          - '1.14.*'
+          - '1.15.*'
+          - 'latest'  # forward-compat regression guard
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: temporalio/setup-temporal@1059a504f87e7fa2f385e3fa40d1aa7e62f1c6ca # v0
+      - name: Start Temporal dev server
+        run: temporal server start-dev --headless &
+        shell: bash
+      - name: Wait for Temporal to be ready
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            if temporal operator cluster health >/dev/null 2>&1; then
+              echo "Temporal is ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Temporal did not become ready within 30s" >&2
+          exit 1
+      - name: Configure default namespace
+        run: temporal operator namespace update --namespace default --description "Default namespace for Temporal Server."
+        shell: bash
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ matrix.terraform-version }}
+          terraform_wrapper: false
+      - run: go test -v -cover ./...
+        env:
+          TF_ACC: '1'

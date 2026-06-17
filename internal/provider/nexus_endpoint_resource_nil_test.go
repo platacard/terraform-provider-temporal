@@ -21,8 +21,11 @@ func TestEncodeDecodeDescription_Roundtrip(t *testing.T) {
 	}
 	for _, want := range cases {
 		t.Run(want, func(t *testing.T) {
-			got := decodeDescription(encodeDescription(want))
-			if got != want {
+			payload, err := encodeDescription(want)
+			if err != nil {
+				t.Fatalf("encodeDescription(%q): %v", want, err)
+			}
+			if got := decodeDescription(payload); got != want {
 				t.Errorf("roundtrip: got %q, want %q", got, want)
 			}
 		})
@@ -30,7 +33,10 @@ func TestEncodeDecodeDescription_Roundtrip(t *testing.T) {
 }
 
 func TestEncodeDescription_MetadataEncoding(t *testing.T) {
-	p := encodeDescription("hello")
+	p, err := encodeDescription("hello")
+	if err != nil {
+		t.Fatalf("encodeDescription: %v", err)
+	}
 	if string(p.GetMetadata()["encoding"]) != "json/plain" {
 		t.Errorf("encoding metadata: got %q, want %q",
 			p.GetMetadata()["encoding"], "json/plain")
@@ -38,6 +44,23 @@ func TestEncodeDescription_MetadataEncoding(t *testing.T) {
 	// Data should be JSON-encoded (quoted), not raw.
 	if string(p.GetData()) != `"hello"` {
 		t.Errorf("data: got %q, want %q", p.GetData(), `"hello"`)
+	}
+}
+
+// TestEncodeDescription_EmptyStringIsPayload verifies that an explicitly-empty
+// description still produces a non-nil Payload with JSON-encoded "" — required
+// so users can intentionally set the server-side description to the empty
+// string. Without this, buildEndpointSpec would conflate "" with "unset".
+func TestEncodeDescription_EmptyStringIsPayload(t *testing.T) {
+	p, err := encodeDescription("")
+	if err != nil {
+		t.Fatalf("encodeDescription(\"\"): %v", err)
+	}
+	if p == nil {
+		t.Fatal("expected non-nil payload for empty string")
+	}
+	if string(p.GetData()) != `""` {
+		t.Errorf("data: got %q, want %q", p.GetData(), `""`)
 	}
 }
 
@@ -77,14 +100,15 @@ func TestLooksLikeUUID(t *testing.T) {
 		want bool
 	}{
 		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5f6", true}, // canonical lowercase
-		{"3B9AA8E2-2C6D-4A48-9C1E-A1B2C3D4E5F6", false}, // uppercase rejected
+		{"3B9AA8E2-2C6D-4A48-9C1E-A1B2C3D4E5F6", true}, // uppercase accepted
+		{"3b9aa8e2-2C6D-4a48-9C1E-a1b2c3d4e5f6", true}, // mixed case accepted
 		{"", false},
 		{"not-a-uuid", false},
-		{"3b9aa8e22c6d4a489c1ea1b2c3d4e5f6", false}, // missing hyphens
-		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5f", false}, // 35 chars
+		{"3b9aa8e22c6d4a489c1ea1b2c3d4e5f6", false},      // missing hyphens
+		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5f", false},   // 35 chars
 		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5f6a", false}, // 37 chars
-		{"3b9aa8e2x2c6d-4a48-9c1e-a1b2c3d4e5f6", false}, // wrong hyphen position
-		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5fg", false}, // non-hex char
+		{"3b9aa8e2x2c6d-4a48-9c1e-a1b2c3d4e5f6", false},  // wrong hyphen position
+		{"3b9aa8e2-2c6d-4a48-9c1e-a1b2c3d4e5fg", false},  // non-hex char
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
@@ -195,13 +219,15 @@ func TestBuildEndpointSpec_ExternalTarget(t *testing.T) {
 	}
 }
 
-func TestBuildEndpointSpec_DescriptionEmptyOrNull(t *testing.T) {
+// TestBuildEndpointSpec_DescriptionNullOrUnknown verifies that null/unknown
+// description (the user didn't set it) produces no payload — so the spec is
+// silent on description and the server keeps whatever it has.
+func TestBuildEndpointSpec_DescriptionNullOrUnknown(t *testing.T) {
 	cases := []struct {
 		name string
 		desc types.String
 	}{
 		{"null", types.StringNull()},
-		{"empty", types.StringValue("")},
 		{"unknown", types.StringUnknown()},
 	}
 	for _, tc := range cases {
@@ -224,6 +250,30 @@ func TestBuildEndpointSpec_DescriptionEmptyOrNull(t *testing.T) {
 	}
 }
 
+// TestBuildEndpointSpec_DescriptionEmptyString verifies that an explicitly-empty
+// description ("") produces a Payload with JSON-encoded "" — distinct from
+// null/unknown. Users who intentionally want an empty server-side description
+// must be able to express that.
+func TestBuildEndpointSpec_DescriptionEmptyString(t *testing.T) {
+	m := &NexusEndpointResourceModel{
+		Name:           types.StringValue("ep"),
+		Description:    types.StringValue(""),
+		ExternalTarget: externalTargetObject(t, "https://example.com"),
+		WorkerTarget:   types.ObjectNull(workerTargetAttrTypes),
+	}
+	spec, diags := buildEndpointSpec(m)
+	if diags.HasError() {
+		t.Fatalf("unexpected diags: %v", diags)
+	}
+	if spec.GetDescription() == nil {
+		t.Fatal("expected non-nil payload for empty string, got nil")
+	}
+	if string(spec.GetDescription().GetData()) != `""` {
+		t.Errorf("payload data: got %q, want %q",
+			spec.GetDescription().GetData(), `""`)
+	}
+}
+
 // --- updateModelFromEndpoint ---
 
 func TestUpdateModelFromEndpoint_NilEndpointNoPanic(t *testing.T) {
@@ -240,13 +290,17 @@ func TestUpdateModelFromEndpoint_WorkerTarget(t *testing.T) {
 		WorkerTarget:   types.ObjectNull(workerTargetAttrTypes),
 		ExternalTarget: types.ObjectNull(externalTargetAttrTypes),
 	}
+	helloPayload, err := encodeDescription("hello")
+	if err != nil {
+		t.Fatalf("encodeDescription: %v", err)
+	}
 	ep := &nexusv1.Endpoint{
 		Id:        "abc-id",
 		Version:   3,
 		UrlPrefix: "/api/v1/namespaces/default/nexus/endpoints/abc-id",
 		Spec: &nexusv1.EndpointSpec{
 			Name:        "wep",
-			Description: encodeDescription("hello"),
+			Description: helloPayload,
 			Target: &nexusv1.EndpointTarget{
 				Variant: &nexusv1.EndpointTarget_Worker_{
 					Worker: &nexusv1.EndpointTarget_Worker{

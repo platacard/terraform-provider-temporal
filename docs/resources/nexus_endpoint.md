@@ -78,7 +78,7 @@ Import is supported using the following syntax:
 The [`terraform import` command](https://developer.hashicorp.com/terraform/cli/commands/import) can be used, for example:
 
 ```shell
-# Import by server-generated endpoint ID (preferred — stable across renames).
+# Import by server-generated endpoint ID (preferred — stable identifier).
 terraform import temporal_nexus_endpoint.order_processing 11111111-2222-3333-4444-555555555555
 
 # Or import by endpoint name (resolved via ListNexusEndpoints).

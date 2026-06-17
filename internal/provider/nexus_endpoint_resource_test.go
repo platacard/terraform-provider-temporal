@@ -326,3 +326,46 @@ resource "temporal_nexus_endpoint" "test" {
 		},
 	})
 }
+
+// TestAccNexusEndpointResource_DescriptionEmptyString verifies that users
+// can intentionally set the server-side description to the empty string —
+// distinct from omitting it. Locks in the buildEndpointSpec change that
+// no longer conflates `description = ""` with `description = null`.
+func TestAccNexusEndpointResource_DescriptionEmptyString(t *testing.T) {
+	name := randEndpointName()
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: providerConfig + fmt.Sprintf(`
+resource "temporal_nexus_endpoint" "test" {
+  name        = %q
+  description = ""
+  external_target = {
+    url = "https://example.com"
+  }
+}
+`, name),
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_nexus_endpoint.test", "description", ""),
+				),
+			},
+			// Re-apply: empty-string round-trip must be stable. If the server
+			// silently dropped the empty payload (returned no description on
+			// Read), updateModelFromEndpoint would set description = null and
+			// this PlanOnly step would surface a `"" → null` diff.
+			{
+				Config: providerConfig + fmt.Sprintf(`
+resource "temporal_nexus_endpoint" "test" {
+  name        = %q
+  description = ""
+  external_target = {
+    url = "https://example.com"
+  }
+}
+`, name),
+				PlanOnly: true,
+			},
+		},
+	})
+}

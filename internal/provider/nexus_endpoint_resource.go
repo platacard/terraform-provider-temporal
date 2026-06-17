@@ -316,8 +316,17 @@ func buildEndpointSpec(m *NexusEndpointResourceModel) (*nexusv1.EndpointSpec, di
 
 	spec := &nexusv1.EndpointSpec{Name: m.Name.ValueString()}
 
-	if !m.Description.IsNull() && !m.Description.IsUnknown() && m.Description.ValueString() != "" {
-		spec.Description = encodeDescription(m.Description.ValueString())
+	// Allow explicitly-empty descriptions through to the server. Only skip
+	// payload construction for null/unknown (the user didn't set it). The
+	// round-trip path in updateModelFromEndpoint preserves the null vs ""
+	// distinction by inspecting whether the server returned a payload at all.
+	if !m.Description.IsNull() && !m.Description.IsUnknown() {
+		payload, err := encodeDescription(m.Description.ValueString())
+		if err != nil {
+			diags.AddError("Encode description", fmt.Sprintf("encode nexus endpoint description: %s", err))
+			return nil, diags
+		}
+		spec.Description = payload
 	}
 
 	if hasWorker {
@@ -358,20 +367,20 @@ func stringFromAttr(v attr.Value) string {
 // {"encoding": "json/plain"} and a JSON-encoded string body, matching
 // the Temporal CLI's encoding for Nexus endpoint descriptions.
 //
-// json.Marshal of a string can technically return an error if the byte
-// sequence is not valid UTF-8 (it does NOT fail outright in that case —
-// it silently replaces with U+FFFD), so this is defensive: any returned
-// error indicates a hard runtime invariant violation (e.g. a json package
-// regression) and we panic rather than emit a corrupted payload.
-func encodeDescription(s string) *commonv1.Payload {
+// json.Marshal of a string is documented as never failing (invalid UTF-8
+// is silently replaced with U+FFFD rather than erroring), so this error
+// path is effectively unreachable. We still surface it as a diagnostic
+// instead of panicking — providers crashing the Terraform process is
+// strictly worse than a clean apply-time error message.
+func encodeDescription(s string) (*commonv1.Payload, error) {
 	body, err := json.Marshal(s)
 	if err != nil {
-		panic(fmt.Sprintf("encodeDescription: json.Marshal of string failed (impossible by spec): %v", err))
+		return nil, fmt.Errorf("json.Marshal of description string: %w", err)
 	}
 	return &commonv1.Payload{
 		Metadata: map[string][]byte{"encoding": []byte("json/plain")},
 		Data:     body,
-	}
+	}, nil
 }
 
 // decodeDescription is the inverse of encodeDescription. Tolerates
@@ -473,13 +482,10 @@ func getEndpointByIDOrName(ctx context.Context, client operatorservice.OperatorS
 	return endpoints[0], nil
 }
 
-// looksLikeUUID does a cheap shape check (8-4-4-4-12 lowercase hex layout).
-// Avoids the cost of pulling in a UUID library just for this.
-//
-// Restricted to lowercase hex because that's the canonical form the
-// Temporal server returns; an uppercase string is almost certainly a
-// mistyped name rather than an ID, so treating it as a name skips an
-// unnecessary GetNexusEndpoint round-trip that would 400 anyway.
+// looksLikeUUID does a cheap shape check (8-4-4-4-12 hex layout). Accepts
+// both lowercase and uppercase hex so import-by-ID works regardless of
+// the casing the user pastes (e.g. copied from a UI that uppercases UUIDs).
+// Avoids pulling in a UUID library just for this.
 func looksLikeUUID(s string) bool {
 	if len(s) != 36 {
 		return false
@@ -491,7 +497,9 @@ func looksLikeUUID(s string) bool {
 				return false
 			}
 		default:
-			isHex := (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')
+			isHex := (c >= '0' && c <= '9') ||
+				(c >= 'a' && c <= 'f') ||
+				(c >= 'A' && c <= 'F')
 			if !isHex {
 				return false
 			}

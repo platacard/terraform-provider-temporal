@@ -13,7 +13,7 @@ require (
 	github.com/jpillora/maplock v0.0.0-20160420012925-5c725ac6e22a
 	go.temporal.io/api v1.63.4
 	golang.org/x/oauth2 v0.36.0
-	google.golang.org/grpc v1.82.1
+	google.golang.org/grpc v1.83.0
 	google.golang.org/protobuf v1.36.11
 )
 
@@ -76,17 +76,17 @@ require (
 	github.com/yuin/goldmark-meta v1.1.0 // indirect
 	github.com/zclconf/go-cty v1.18.1 // indirect
 	go.abhg.dev/goldmark/frontmatter v0.2.0 // indirect
-	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20240103183307-be819d1f06fc // indirect
 	golang.org/x/mod v0.35.0 // indirect
-	golang.org/x/net v0.53.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.43.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.44.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

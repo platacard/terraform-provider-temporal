@@ -1,6 +1,6 @@
 module github.com/platacard/terraform-provider-temporal
 
-go 1.25.8
+go 1.26.0
 
 require (
 	github.com/hashicorp/go-uuid v1.0.3
@@ -12,7 +12,7 @@ require (
 	github.com/hashicorp/terraform-plugin-testing v1.16.0
 	github.com/jpillora/maplock v0.0.0-20160420012925-5c725ac6e22a
 	go.temporal.io/api v1.63.5
-	golang.org/x/oauth2 v0.36.0
+	golang.org/x/oauth2 v0.37.0
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )

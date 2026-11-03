@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
@@ -75,4 +76,31 @@ func (r *NamespaceResource) UpgradeState(context.Context) map[int64]resource.Sta
 			resp.DynamicValue = &tfprotov6.DynamicValue{JSON: data}
 		},
 	}}
+}
+
+// Terraform permits retaining the prior state value when it is semantically
+// equivalent to configuration. Never construct a third spelling in the plan.
+type retentionSemanticEquality struct{}
+
+func (retentionSemanticEquality) Description(context.Context) string {
+	return "Keeps the prior retention spelling when it denotes the same duration."
+}
+func (m retentionSemanticEquality) MarkdownDescription(ctx context.Context) string {
+	return m.Description(ctx)
+}
+func (retentionSemanticEquality) PlanModifyString(_ context.Context, req planmodifier.StringRequest, resp *planmodifier.StringResponse) {
+	if req.StateValue.IsNull() || req.StateValue.IsUnknown() || req.PlanValue.IsNull() || req.PlanValue.IsUnknown() {
+		return
+	}
+	planned, err := parseRetention(req.PlanValue.ValueString())
+	if err != nil {
+		return
+	}
+	prior, err := parseRetention(req.StateValue.ValueString())
+	if err != nil {
+		return
+	}
+	if planned == prior {
+		resp.PlanValue = req.StateValue
+	}
 }

@@ -58,10 +58,15 @@ does not include a `d` unit.
 Existing resource state is automatically upgraded from integer days to strings.
 Existing configurations such as `retention = 3` remain supported and still mean
 three days. The default remains three days (`"72h"`). Equivalent configured
-spellings are preserved during refresh.
+spellings are preserved during refresh. Plans also retain the prior spelling when
+the configured duration is equivalent, including after import or migration of
+the old default.
 
 The resource and data source now expose retention as a string. Update consumers
 that previously performed numeric operations on this attribute. Newly imported
 resources and data source results use Go's duration formatting (for example,
 `"1h0m1s"`). Update legacy configurations to duration strings when convenient;
 no namespace recreation is required.
+
+State written using schema version 1 cannot be read by older provider versions.
+Do not downgrade after applying the upgrade without restoring a compatible state backup.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework/resource"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 	namespace "go.temporal.io/api/namespace/v1"
@@ -71,6 +72,32 @@ func TestRetentionStateUpgrade(t *testing.T) {
 			}
 			if string(result["retention"]) != expected || string(result["name"]) != `"keep-me"` || string(result["clusters"]) != `["active"]` {
 				t.Fatalf("unexpected state: %s", resp.DynamicValue.JSON)
+			}
+		})
+	}
+}
+
+func TestRetentionSemanticEquality(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		prior, planned, want types.String
+	}{
+		{"default migration", types.StringValue("3"), types.StringValue("72h"), types.StringValue("3")},
+		{"import", types.StringValue("1h0m1s"), types.StringValue("1h1s"), types.StringValue("1h0m1s")},
+		{"real change", types.StringValue("1h"), types.StringValue("2h"), types.StringValue("2h")},
+		{"new resource", types.StringNull(), types.StringValue("72h"), types.StringValue("72h")},
+		{"destroy", types.StringValue("3"), types.StringNull(), types.StringNull()},
+		{"unknown plan", types.StringValue("3"), types.StringUnknown(), types.StringUnknown()},
+		{"unknown prior", types.StringUnknown(), types.StringValue("72h"), types.StringValue("72h")},
+		{"invalid prior", types.StringValue("invalid"), types.StringValue("72h"), types.StringValue("72h")},
+		{"invalid plan", types.StringValue("3"), types.StringValue("invalid"), types.StringValue("invalid")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := planmodifier.StringRequest{StateValue: tc.prior, PlanValue: tc.planned}
+			resp := planmodifier.StringResponse{PlanValue: tc.planned}
+			retentionSemanticEquality{}.PlanModifyString(context.Background(), req, &resp)
+			if !resp.PlanValue.Equal(tc.want) || resp.Diagnostics.HasError() {
+				t.Fatalf("got %s, want %s; diagnostics: %v", resp.PlanValue, tc.want, resp.Diagnostics)
 			}
 		})
 	}

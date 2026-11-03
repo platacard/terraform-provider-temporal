@@ -167,3 +167,25 @@ func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testi
 		},
 	})
 }
+
+func TestAccNamespaceSubdayRetention(t *testing.T) {
+	config := func(retention string) string {
+		return providerConfig + `
+resource "temporal_namespace" "subday" {
+  name = "provider-test-subday"
+  owner_email = "test@example.org"
+  retention = ` + retention + `
+}
+`
+	}
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: config("3"), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
+			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "1h1s")},
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"retention"}},
+			{Config: config(`"90m30s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "90m30s")},
+			{Config: config(`"90m30s"`), PlanOnly: true},
+		},
+	})
+}

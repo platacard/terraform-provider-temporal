@@ -14,10 +14,10 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
@@ -56,7 +56,7 @@ type NamespaceResourceModel struct {
 	Id                      types.String `tfsdk:"id"`
 	Description             types.String `tfsdk:"description"`
 	OwnerEmail              types.String `tfsdk:"owner_email"`
-	Retention               types.Int64  `tfsdk:"retention"`
+	Retention               types.String `tfsdk:"retention"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
 	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
@@ -76,6 +76,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 	resp.Schema = schema.Schema{
 		// This description is used by the documentation generator and the language server.
 		MarkdownDescription: "Temporal Namespace resource",
+		Version:             1,
 
 		Attributes: map[string]schema.Attribute{
 			"name": schema.StringAttribute{
@@ -99,11 +100,12 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				MarkdownDescription: "Namespace Owner Email",
 				Required:            true,
 			},
-			"retention": schema.Int64Attribute{
-				MarkdownDescription: "Workflow Execution retention",
+			"retention": schema.StringAttribute{
+				MarkdownDescription: retentionDescription,
 				Optional:            true,
 				Computed:            true,
-				Default:             int64default.StaticInt64(3),
+				Default:             stringdefault.StaticString("72h"),
+				Validators:          []validator.String{retentionValidator{}},
 			},
 			"active_cluster_name": schema.StringAttribute{
 				MarkdownDescription: "Active Cluster Name",
@@ -186,7 +188,12 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
+	retentionDuration, retentionErr := parseRetention(data.Retention.ValueString())
+	if retentionErr != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("retention"), "Invalid retention", retentionErr.Error())
+		return
+	}
+	retention := durationpb.New(retentionDuration)
 
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        data.Name.ValueString(),
@@ -273,7 +280,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	tflog.Trace(ctx, "read a Temporal Namespace resource")
 
-	var data NamespaceResourceModel
+	data := state
 	resp.Diagnostics.Append(updateModelFromSpec(ctx, &data, ns)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -295,7 +302,12 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
+	retentionDuration, retentionErr := parseRetention(data.Retention.ValueString())
+	if retentionErr != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("retention"), "Invalid retention", retentionErr.Error())
+		return
+	}
+	retention := durationpb.New(retentionDuration)
 
 	request := &workflowservice.UpdateNamespaceRequest{
 		Namespace: data.Name.ValueString(),
@@ -478,7 +490,11 @@ func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *
 	data.Name = types.StringValue(ns.NamespaceInfo.GetName())
 	data.Description = types.StringValue(ns.NamespaceInfo.GetDescription())
 	data.OwnerEmail = types.StringValue(ns.NamespaceInfo.GetOwnerEmail())
-	data.Retention = types.Int64Value(int64(ns.Config.GetWorkflowExecutionRetentionTtl().AsDuration().Hours() / 24))
+	actualRetention := ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration()
+	configuredRetention, err := parseRetention(data.Retention.ValueString())
+	if data.Retention.IsNull() || data.Retention.IsUnknown() || err != nil || configuredRetention != actualRetention {
+		data.Retention = types.StringValue(actualRetention.String())
+	}
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
 	data.HistoryArchivalState = types.StringValue(ns.GetConfig().GetHistoryArchivalState().String())
 	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())

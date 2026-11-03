@@ -37,7 +37,7 @@ resource "temporal_namespace" "example" {
 - `history_archival_state` (String) History Archival State
 - `history_archival_uri` (String) History Archival URI
 - `is_global_namespace` (Boolean) Namespace is Global
-- `retention` (Number) Workflow Execution retention
+- `retention` (String) Workflow Execution retention as a duration string, for example 1h, 1h1s, 90m30s, or 72h. Bare integers are accepted as days for compatibility. Temporal enforces a minimum of 1h for local namespaces and 24h for global namespaces.
 - `visibility_archival_state` (String) Visibility Archival State
 - `visibility_archival_uri` (String) Visibility Archival URI
 

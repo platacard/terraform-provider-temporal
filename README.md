@@ -36,3 +36,32 @@ In order to run the full suite of Acceptance tests, run `make testacc`.
 ```shell
 make testacc
 ```
+
+### Namespace retention durations
+
+Namespace retention accepts Go duration strings, including subday values:
+
+```hcl
+resource "temporal_namespace" "example" {
+  name        = "example"
+  owner_email = "team@example.org"
+  retention   = "90m30s"
+}
+```
+
+Temporal enforces a minimum of one hour for local namespaces and one day for
+global namespaces. Use hours for days (for example, `"72h"`); the duration syntax
+does not include a `d` unit.
+
+#### Migrating integer-day retention
+
+Existing resource state is automatically upgraded from integer days to strings.
+Existing configurations such as `retention = 3` remain supported and still mean
+three days. The default remains three days (`"72h"`). Equivalent configured
+spellings are preserved during refresh.
+
+The resource and data source now expose retention as a string. Update consumers
+that previously performed numeric operations on this attribute. Newly imported
+resources and data source results use Go's duration formatting (for example,
+`"1h0m1s"`). Update legacy configurations to duration strings when convenient;
+no namespace recreation is required.

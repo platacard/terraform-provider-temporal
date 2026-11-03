@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
@@ -112,13 +113,16 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Computed:            true,
 				Default:             stringdefault.StaticString("72h"),
 				Validators:          []validator.String{retentionValidator{}},
+				PlanModifiers:       []planmodifier.String{retentionSemanticEquality{}},
 			},
 			"active_cluster_name": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Active Cluster Name",
 				Optional:            true,
 				Computed:            true,
 			},
 			"clusters": schema.ListAttribute{
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Clusters",
 				Optional:            true,
 				Computed:            true,
@@ -131,6 +135,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"history_archival_uri": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "History Archival URI",
 				Computed:            true,
 				Optional:            true,
@@ -142,6 +147,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"visibility_archival_uri": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Visibility Archival URI",
 				Computed:            true,
 				Optional:            true,

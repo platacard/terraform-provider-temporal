@@ -2,15 +2,12 @@ package provider
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
-	"github.com/hashicorp/terraform-plugin-go/tfprotov6"
 )
 
 const retentionDescription = "Workflow Execution retention as a duration string, for example 1h, 1h1s, 90m30s, or 72h. Bare integers are accepted as days for compatibility. Temporal enforces a minimum of 1h for local namespaces and 24h for global namespaces."
@@ -42,40 +39,6 @@ func (v retentionValidator) ValidateString(ctx context.Context, req validator.St
 	if err != nil || d < time.Hour {
 		resp.Diagnostics.AddAttributeError(req.Path, "Invalid retention", v.Description(ctx))
 	}
-}
-
-var _ resource.ResourceWithUpgradeState = &NamespaceResource{}
-
-// Upgrade only retention, preserving all other state fields verbatim.
-func (r *NamespaceResource) UpgradeState(context.Context) map[int64]resource.StateUpgrader {
-	return map[int64]resource.StateUpgrader{0: {
-		StateUpgrader: func(ctx context.Context, req resource.UpgradeStateRequest, resp *resource.UpgradeStateResponse) {
-			var state map[string]json.RawMessage
-			if req.RawState == nil {
-				resp.Diagnostics.AddError("Unable to upgrade namespace state", "Missing prior state")
-				return
-			}
-			if err := json.Unmarshal(req.RawState.JSON, &state); err != nil {
-				resp.Diagnostics.AddError("Unable to upgrade namespace state", err.Error())
-				return
-			}
-			if raw, ok := state["retention"]; ok && string(raw) != "null" {
-				var days int64
-				if err := json.Unmarshal(raw, &days); err != nil {
-					resp.Diagnostics.AddError("Unable to upgrade retention", err.Error())
-					return
-				}
-				// Preserve the old numeric spelling so unchanged configurations remain stable.
-				state["retention"], _ = json.Marshal(strconv.FormatInt(days, 10))
-			}
-			data, err := json.Marshal(state)
-			if err != nil {
-				resp.Diagnostics.AddError("Unable to upgrade namespace state", err.Error())
-				return
-			}
-			resp.DynamicValue = &tfprotov6.DynamicValue{JSON: data}
-		},
-	}}
 }
 
 // Terraform permits retaining the prior state value when it is semantically

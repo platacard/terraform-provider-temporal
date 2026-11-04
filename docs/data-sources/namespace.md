@@ -40,5 +40,6 @@ data "temporal_namespace" "example" {
 - `id` (String) Namespace identifier
 - `is_global_namespace` (Boolean) Namespace is Global
 - `owner_email` (String) Namespace Owner Email
-- `retention` (String) Workflow Execution retention as a duration string, for example 1h, 1h1s, 90m30s, or 72h. Bare integers are accepted as days for compatibility. Temporal enforces a minimum of 1h for local namespaces and 24h for global namespaces.
+- `retention` (Number) Workflow Execution retention in whole days.
+- `retention_period` (String) Workflow Execution retention as a duration string, for example 1h, 1h1s, 90m30s, or 72h. Bare integers are accepted as days for compatibility. Temporal enforces a minimum of 1h for local namespaces and 24h for global namespaces.
 - `visibility_archival_state` (String) Visibility Archival State

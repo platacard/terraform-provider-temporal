@@ -39,34 +39,22 @@ make testacc
 
 ### Namespace retention durations
 
-Namespace retention accepts Go duration strings, including subday values:
+The existing `retention` attribute remains an integer number of days for
+backward compatibility and is deprecated. Use `retention_period` for duration
+precision:
 
 ```hcl
 resource "temporal_namespace" "example" {
-  name        = "example"
-  owner_email = "team@example.org"
-  retention   = "90m30s"
+  name             = "example"
+  owner_email      = "team@example.org"
+  retention        = 3
+  retention_period = "90m30s"
 }
 ```
 
-Temporal enforces a minimum of one hour for local namespaces and one day for
-global namespaces. Use hours for days (for example, `"72h"`); the duration syntax
-does not include a `d` unit.
-
-#### Migrating integer-day retention
-
-Existing resource state is automatically upgraded from integer days to strings.
-Existing configurations such as `retention = 3` remain supported and still mean
-three days. The default remains three days (`"72h"`). Equivalent configured
-spellings are preserved during refresh. Plans also retain the prior spelling when
-the configured duration is equivalent, including after import or migration of
-the old default.
-
-The resource and data source now expose retention as a string. Update consumers
-that previously performed numeric operations on this attribute. Newly imported
-resources and data source results use Go's duration formatting (for example,
-`"1h0m1s"`). Update legacy configurations to duration strings when convenient;
-no namespace recreation is required.
-
-State written using schema version 1 cannot be read by older provider versions.
-Do not downgrade after applying the upgrade without restoring a compatible state backup.
+Existing configuration, state, and numeric data source outputs for `retention`
+continue to work. When `retention_period` is set, it determines the Temporal
+retention. Temporal enforces a minimum of one hour for local namespaces and one
+day for global namespaces. Duration strings use Go syntax, so use `72h` instead
+of `3d`. The default remains three days. The deprecated `retention` field is
+intended for removal in a future major release.

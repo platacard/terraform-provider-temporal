@@ -27,8 +27,8 @@ func TestNamespaceDataSourceModel_NilConfig(t *testing.T) {
 	if model == nil {
 		t.Fatal("expected non-nil model")
 	}
-	if model.Retention.ValueString() != "0s" {
-		t.Errorf("expected Retention 0 for nil Config, got %s", model.Retention.ValueString())
+	if model.Retention.ValueInt64() != 0 {
+		t.Errorf("expected Retention 0 for nil Config, got %d", model.Retention.ValueInt64())
 	}
 }
 

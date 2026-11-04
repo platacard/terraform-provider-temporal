@@ -9,7 +9,6 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"os"
 	"regexp"
-	"strings"
 	"testing"
 	"time"
 
@@ -183,7 +182,8 @@ func TestAccNamespaceSubdayRetention(t *testing.T) {
 resource "temporal_namespace" "subday" {
   name = "provider-test-subday"
   owner_email = "test@example.org"
-  retention = ` + retention + `
+  retention = 3
+  retention_period = ` + retention + `
 }
 `
 	}
@@ -191,11 +191,11 @@ resource "temporal_namespace" "subday" {
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
 			{Config: config("3"), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
-			{Config: strings.Replace(config("3"), "  retention = 3", "", 1), PlanOnly: true},
-			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "1h1s")},
-			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"retention"}},
+			{Config: config("72h"), PlanOnly: true},
+			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"retention_period"}},
 
-			{Config: config(`"90m30s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "90m30s")},
+			{Config: config(`"90m30s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "90m30s")},
 			{Config: config(`"90m30s"`), PlanOnly: true},
 		},
 	})
@@ -228,7 +228,7 @@ func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
 resource "temporal_namespace" "imported" {
   name = "provider-test-retention-import"
   owner_email = "test@example.org"
-  retention = "1h1s"
+  retention_period = "1h1s"
 }
 `
 	resource.Test(t, resource.TestCase{

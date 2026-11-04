@@ -37,7 +37,8 @@ type NamespaceDataSourceModel struct {
 	Id                      types.String `tfsdk:"id"`
 	Description             types.String `tfsdk:"description"`
 	OwnerEmail              types.String `tfsdk:"owner_email"`
-	Retention               types.String `tfsdk:"retention"`
+	Retention               types.Int64  `tfsdk:"retention"`
+	RetentionPeriod         types.String `tfsdk:"retention_period"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
 	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
@@ -75,10 +76,8 @@ func (d *NamespaceDataSource) Schema(ctx context.Context, req datasource.SchemaR
 				MarkdownDescription: "Namespace Owner Email",
 				Computed:            true,
 			},
-			"retention": schema.StringAttribute{
-				MarkdownDescription: retentionDescription,
-				Computed:            true,
-			},
+			"retention":        schema.Int64Attribute{MarkdownDescription: "Workflow Execution retention in whole days.", Computed: true},
+			"retention_period": schema.StringAttribute{MarkdownDescription: retentionDescription, Computed: true},
 			"active_cluster_name": schema.StringAttribute{
 				MarkdownDescription: "Active Cluster Name",
 				Computed:            true,
@@ -179,7 +178,8 @@ func namespaceToNamespaceDataSourceModel(ctx context.Context, ns *workflowservic
 		Id:                      types.StringValue(ns.NamespaceInfo.GetId()),
 		Description:             types.StringValue(ns.NamespaceInfo.GetDescription()),
 		OwnerEmail:              types.StringValue(ns.NamespaceInfo.GetOwnerEmail()),
-		Retention:               types.StringValue(ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration().String()),
+		Retention:               types.Int64Value(int64(ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration().Hours() / 24)),
+		RetentionPeriod:         types.StringValue(ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration().String()),
 		ActiveClusterName:       types.StringValue(ns.GetReplicationConfig().GetActiveClusterName()),
 		HistoryArchivalState:    types.StringValue(ns.Config.GetHistoryArchivalState().String()),
 		HistoryArchivalUri:      types.StringValue(ns.Config.GetHistoryArchivalUri()),

@@ -211,7 +211,11 @@ func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Errorf("failed to close Temporal connection: %v", err)
+		}
+	}()
 	ctx := context.Background()
 	const name = "provider-test-retention-import"
 	_, err = workflowservice.NewWorkflowServiceClient(conn).RegisterNamespace(ctx, &workflowservice.RegisterNamespaceRequest{

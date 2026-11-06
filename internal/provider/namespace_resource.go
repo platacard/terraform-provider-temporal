@@ -15,9 +15,11 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringplanmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"go.temporal.io/api/enums/v1"
@@ -57,6 +59,7 @@ type NamespaceResourceModel struct {
 	Description             types.String `tfsdk:"description"`
 	OwnerEmail              types.String `tfsdk:"owner_email"`
 	Retention               types.Int64  `tfsdk:"retention"`
+	RetentionPeriod         types.String `tfsdk:"retention_period"`
 	ActiveClusterName       types.String `tfsdk:"active_cluster_name"`
 	Clusters                types.List   `tfsdk:"clusters"`
 	HistoryArchivalState    types.String `tfsdk:"history_archival_state"`
@@ -100,17 +103,24 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Required:            true,
 			},
 			"retention": schema.Int64Attribute{
-				MarkdownDescription: "Workflow Execution retention",
-				Optional:            true,
-				Computed:            true,
-				Default:             int64default.StaticInt64(3),
+				MarkdownDescription: "Workflow Execution retention in whole days (deprecated; use retention_period).",
+				Optional:            true, Computed: true, Default: int64default.StaticInt64(3),
+				DeprecationMessage: "Use retention_period for duration precision.",
+			},
+			"retention_period": schema.StringAttribute{
+				MarkdownDescription: retentionDescription,
+				Optional:            true, Computed: true,
+				Validators:    []validator.String{retentionValidator{}},
+				PlanModifiers: []planmodifier.String{retentionSemanticEquality{}},
 			},
 			"active_cluster_name": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Active Cluster Name",
 				Optional:            true,
 				Computed:            true,
 			},
 			"clusters": schema.ListAttribute{
+				PlanModifiers:       []planmodifier.List{listplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Clusters",
 				Optional:            true,
 				Computed:            true,
@@ -123,6 +133,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"history_archival_uri": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "History Archival URI",
 				Computed:            true,
 				Optional:            true,
@@ -134,6 +145,7 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 				Default:             stringdefault.StaticString(enums.ARCHIVAL_STATE_DISABLED.String()),
 			},
 			"visibility_archival_uri": schema.StringAttribute{
+				PlanModifiers:       []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
 				MarkdownDescription: "Visibility Archival URI",
 				Computed:            true,
 				Optional:            true,
@@ -186,7 +198,12 @@ func (r *NamespaceResource) Create(ctx context.Context, req resource.CreateReque
 		return
 	}
 
-	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
+	retentionDuration, retentionErr := namespaceRetention(data.Retention, data.RetentionPeriod)
+	if retentionErr != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("retention_period"), "Invalid retention", retentionErr.Error())
+		return
+	}
+	retention := durationpb.New(retentionDuration)
 
 	request := &workflowservice.RegisterNamespaceRequest{
 		Namespace:                        data.Name.ValueString(),
@@ -273,7 +290,7 @@ func (r *NamespaceResource) Read(ctx context.Context, req resource.ReadRequest, 
 
 	tflog.Trace(ctx, "read a Temporal Namespace resource")
 
-	var data NamespaceResourceModel
+	data := state
 	resp.Diagnostics.Append(updateModelFromSpec(ctx, &data, ns)...)
 	if resp.Diagnostics.HasError() {
 		return
@@ -295,7 +312,12 @@ func (r *NamespaceResource) Update(ctx context.Context, req resource.UpdateReque
 		return
 	}
 
-	retention := durationpb.New(time.Duration(data.Retention.ValueInt64()) * day)
+	retentionDuration, retentionErr := namespaceRetention(data.Retention, data.RetentionPeriod)
+	if retentionErr != nil {
+		resp.Diagnostics.AddAttributeError(path.Root("retention_period"), "Invalid retention", retentionErr.Error())
+		return
+	}
+	retention := durationpb.New(retentionDuration)
 
 	request := &workflowservice.UpdateNamespaceRequest{
 		Namespace: data.Name.ValueString(),
@@ -478,7 +500,9 @@ func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *
 	data.Name = types.StringValue(ns.NamespaceInfo.GetName())
 	data.Description = types.StringValue(ns.NamespaceInfo.GetDescription())
 	data.OwnerEmail = types.StringValue(ns.NamespaceInfo.GetOwnerEmail())
-	data.Retention = types.Int64Value(int64(ns.Config.GetWorkflowExecutionRetentionTtl().AsDuration().Hours() / 24))
+	actualRetention := ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration()
+	data.Retention = types.Int64Value(int64(actualRetention.Hours() / 24))
+	data.RetentionPeriod = types.StringValue(actualRetention.String())
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
 	data.HistoryArchivalState = types.StringValue(ns.GetConfig().GetHistoryArchivalState().String())
 	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())
@@ -512,4 +536,17 @@ func clusterInClusters(clusterName types.String, clusters types.List) bool {
 		}
 	}
 	return false
+}
+
+func namespaceRetention(days types.Int64, period types.String) (time.Duration, error) {
+	if !period.IsNull() && !period.IsUnknown() && period.ValueString() != "" {
+		return parseRetention(period.ValueString())
+	}
+	if days.IsNull() || days.IsUnknown() {
+		return 3 * day, nil
+	}
+	if days.ValueInt64() < 0 || days.ValueInt64() > int64((1<<63-1)/day) {
+		return 0, fmt.Errorf("retention days out of range")
+	}
+	return time.Duration(days.ValueInt64()) * day, nil
 }

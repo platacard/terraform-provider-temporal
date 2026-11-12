@@ -214,8 +214,8 @@ github.com/zclconf/go-cty-debug v0.0.0-20240509010212-0d6042c53940 h1:4r45xpDWB6
 github.com/zclconf/go-cty-debug v0.0.0-20240509010212-0d6042c53940/go.mod h1:CmBdvvj3nqzfzJ6nTCIwDTPZ56aVGvDrmztiO5g3qrM=
 go.abhg.dev/goldmark/frontmatter v0.2.0 h1:P8kPG0YkL12+aYk2yU3xHv4tcXzeVnN+gU0tJ5JnxRw=
 go.abhg.dev/goldmark/frontmatter v0.2.0/go.mod h1:XqrEkZuM57djk7zrlRUB02x8I5J0px76YjkOzhB4YlU=
-go.temporal.io/api v1.64.1 h1:vqTmXhuTMdIbe7wqCQ8st/YBlAluV7EpfM4R3GrK4p4=
-go.temporal.io/api v1.64.1/go.mod h1:acM0I9WPuYg8W3Pd9jOZvEgi7mRUttUQ4+e7fowKVnM=
+go.temporal.io/api v1.64.2 h1:3ZWDOGYoe/koJYCdCwToTWMw66wyCKGRSFEefmHyWzg=
+go.temporal.io/api v1.64.2/go.mod h1:acM0I9WPuYg8W3Pd9jOZvEgi7mRUttUQ4+e7fowKVnM=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
 golang.org/x/crypto v0.0.0-20210921155107-089bfa567519/go.mod h1:GvvjBRRGRdwPK5ydBHafDWAxML/pGHZbMvKqRZ5+Abc=
 golang.org/x/crypto v0.3.0/go.mod h1:hebNnKkNXi2UzZN1eVRvBB7co0a+JxK6XbPiWVs/3J4=
@@ -233,8 +233,8 @@ golang.org/x/net v0.0.0-20220722155237-a158d28d115b/go.mod h1:XRhObCWvk6IyKnWLug
 golang.org/x/net v0.2.0/go.mod h1:KqCZLdyyvdV855qA2rE3GC2aiw5xGR5TEjj8smXukLY=
 golang.org/x/net v0.60.0 h1:79p50tfZlm0J9YfoDsSi639qSXNGVwEzOPLCxM2FsYU=
 golang.org/x/net v0.60.0/go.mod h1:2DA/G1UfVbCpQPeWTmMPGY7Cs2PkBkwu743bVX5PIVg=
-golang.org/x/oauth2 v0.37.0 h1:JUlcxA8oAtauLfiH8FX2/FkAWHAdi0QtGCGc+hofE98=
-golang.org/x/oauth2 v0.37.0/go.mod h1:IxwZNxUULJmpBFf9K/9NTMSIfZZuvuTy1gGxhigP/58=
+golang.org/x/oauth2 v0.38.0 h1:uW7XQbcu1eoiQS7uMJvLOjPMl04bTbmY1VeRPxvbspI=
+golang.org/x/oauth2 v0.38.0/go.mod h1:IxwZNxUULJmpBFf9K/9NTMSIfZZuvuTy1gGxhigP/58=
 golang.org/x/sync v0.0.0-20180314180146-1d60e4601c6f/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20190423024810-112230192c58/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=
 golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4/go.mod h1:RxMgew5VJxzue5/jJTE5uejpjVlOe/izrB70Jof72aM=

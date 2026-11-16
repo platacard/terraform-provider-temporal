@@ -14,7 +14,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64default"
+	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -110,7 +110,8 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			},
 			"retention": schema.Int64Attribute{
 				MarkdownDescription: "Workflow Execution retention in whole days (deprecated; use retention_period).",
-				Optional:            true, Computed: true, Default: int64default.StaticInt64(3),
+				Optional:            true, Computed: true,
+				PlanModifiers:      []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
 				DeprecationMessage: "Use retention_period for duration precision.",
 			},
 			"retention_period": schema.StringAttribute{
@@ -507,8 +508,13 @@ func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *
 	data.Description = types.StringValue(ns.NamespaceInfo.GetDescription())
 	data.OwnerEmail = types.StringValue(ns.NamespaceInfo.GetOwnerEmail())
 	actualRetention := ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration()
-	data.Retention = types.Int64Value(int64(actualRetention.Hours() / 24))
-	data.RetentionPeriod = types.StringValue(actualRetention.String())
+	if data.Retention.IsNull() || data.Retention.IsUnknown() {
+		data.Retention = types.Int64Value(int64(actualRetention.Hours() / 24))
+	}
+	configuredPeriod, err := parseRetention(data.RetentionPeriod.ValueString())
+	if data.RetentionPeriod.IsNull() || data.RetentionPeriod.IsUnknown() || err != nil || configuredPeriod != actualRetention {
+		data.RetentionPeriod = types.StringValue(actualRetention.String())
+	}
 	data.ActiveClusterName = types.StringValue(ns.GetReplicationConfig().GetActiveClusterName())
 	data.HistoryArchivalState = types.StringValue(ns.GetConfig().GetHistoryArchivalState().String())
 	data.HistoryArchivalUri = types.StringValue(ns.GetConfig().GetHistoryArchivalUri())

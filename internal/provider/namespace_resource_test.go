@@ -251,8 +251,8 @@ resource "temporal_namespace" "subday" {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
-			{Config: config("72h"), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
-			{Config: config("72h"), PlanOnly: true},
+			{Config: config(`"72h"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
+			{Config: config(`"72h"`), PlanOnly: true},
 			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
 			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"retention_period"}},
 

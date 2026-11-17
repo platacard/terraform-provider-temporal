@@ -97,7 +97,13 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			},
 			"owner_email": schema.StringAttribute{
 				MarkdownDescription: "Namespace Owner Email",
-				Required:            true,
+				Optional:            true,
+				Computed:            true,
+				PlanModifiers: []planmodifier.String{
+					// Temporal ignores an empty owner email on update, so when the
+					// attribute is not configured keep whatever the server has.
+					stringplanmodifier.UseStateForUnknown(),
+				},
 			},
 			"retention": schema.Int64Attribute{
 				MarkdownDescription: "Workflow Execution retention",

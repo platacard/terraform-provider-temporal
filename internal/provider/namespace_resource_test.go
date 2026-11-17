@@ -1,10 +1,20 @@
 package provider_test
 
 import (
+	"context"
+	"fmt"
+	"go.temporal.io/api/operatorservice/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"os"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccNamespaceResource(t *testing.T) {
@@ -164,6 +174,86 @@ func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testi
 				`,
 				ExpectError: regexp.MustCompile("Active cluster name is not in the clusters"),
 			},
+		},
+	})
+}
+
+func TestAccNamespaceSubdayRetention(t *testing.T) {
+	config := func(retention string) string {
+		return providerConfig + `
+resource "temporal_namespace" "subday" {
+  name = "provider-test-subday"
+  owner_email = "test@example.org"
+  retention = 3
+  retention_period = ` + retention + `
+}
+`
+	}
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: config(`"72h"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
+			{Config: config(`"72h"`), PlanOnly: true},
+			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, // Import cannot recover the ignored legacy configuration or duration spelling.
+				ImportStateVerifyIgnore: []string{"retention", "retention_period"},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("expected one imported namespace, got %d", len(states))
+					}
+					attrs := states[0].Attributes
+					if attrs["retention"] != "0" || attrs["retention_period"] != "1h0m1s" {
+						return fmt.Errorf("unexpected imported retention: days=%q, period=%q", attrs["retention"], attrs["retention_period"])
+					}
+					return nil
+				},
+			},
+
+			{Config: config(`"90m30s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "90m30s")},
+			{Config: config(`"90m30s"`), PlanOnly: true},
+		},
+	})
+}
+
+// Start with an unmanaged namespace: persisting an import into an address that
+// is already managed would fail before it exercised the post-import plan.
+func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
+	if os.Getenv("TF_ACC") == "" {
+		t.Skip("acceptance test")
+	}
+	conn, err := grpc.NewClient("127.0.0.1:7233", grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := conn.Close(); err != nil {
+			t.Errorf("failed to close Temporal connection: %v", err)
+		}
+	}()
+	ctx := context.Background()
+	const name = "provider-test-retention-import"
+	_, err = workflowservice.NewWorkflowServiceClient(conn).RegisterNamespace(ctx, &workflowservice.RegisterNamespaceRequest{
+		Namespace: name, OwnerEmail: "test@example.org",
+		WorkflowExecutionRetentionPeriod: durationpb.New(time.Hour + time.Second),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_, _ = operatorservice.NewOperatorServiceClient(conn).DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{Namespace: name})
+	}()
+	const config = providerConfig + `
+resource "temporal_namespace" "imported" {
+  name = "provider-test-retention-import"
+  owner_email = "test@example.org"
+  retention_period = "1h1s"
+}
+`
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: config, ResourceName: "temporal_namespace.imported", ImportState: true, ImportStateId: name, ImportStatePersist: true},
+			{Config: config, PlanOnly: true},
 		},
 	})
 }

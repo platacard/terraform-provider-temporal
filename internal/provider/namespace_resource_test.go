@@ -2,6 +2,7 @@ package provider_test
 
 import (
 	"context"
+	"fmt"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/terraform"
 )
 
 func TestAccNamespaceResource(t *testing.T) {
@@ -193,7 +195,19 @@ resource "temporal_namespace" "subday" {
 			{Config: config(`"72h"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
 			{Config: config(`"72h"`), PlanOnly: true},
 			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
-			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, ImportStateVerifyIgnore: []string{"retention_period"}},
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, // Import cannot recover the ignored legacy configuration or duration spelling.
+				ImportStateVerifyIgnore: []string{"retention", "retention_period"},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("expected one imported namespace, got %d", len(states))
+					}
+					attrs := states[0].Attributes
+					if attrs["retention"] != "0" || attrs["retention_period"] != "1h0m1s" {
+						return fmt.Errorf("unexpected imported retention: days=%q, period=%q", attrs["retention"], attrs["retention_period"])
+					}
+					return nil
+				},
+			},
 
 			{Config: config(`"90m30s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "90m30s")},
 			{Config: config(`"90m30s"`), PlanOnly: true},

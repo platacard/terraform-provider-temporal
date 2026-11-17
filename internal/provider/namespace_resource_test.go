@@ -52,6 +52,48 @@ resource "temporal_namespace" "test" {
 	})
 }
 
+func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			// Create without owner_email
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+				}
+				`,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", ""),
+				),
+			},
+			// Set owner_email on an existing namespace
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+				}
+				`,
+				Check: resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", "test@example.org"),
+			},
+			// Removing owner_email from the config keeps the existing value
+			{
+				Config: providerConfig + `
+				resource "temporal_namespace" "test" {
+					name        = "test"
+					description = "This is a test namespace"
+				}
+				`,
+				Check: resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", "test@example.org"),
+			},
+		},
+	})
+}
+
 func TestAccNamespaceAlreadyExsits(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,

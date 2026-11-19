@@ -47,14 +47,12 @@ precision:
 resource "temporal_namespace" "example" {
   name             = "example"
   owner_email      = "team@example.org"
-  retention        = 3
   retention_period = "90m30s"
 }
 ```
 
 Existing configuration, state, and numeric data source outputs for `retention`
-continue to work. When `retention_period` is set, it determines the Temporal
-retention. Temporal enforces a minimum of one hour for local namespaces and one
+continue to work. Configure either `retention` or `retention_period`; setting both is rejected. Temporal enforces a minimum of one hour for local namespaces and one
 day for global namespaces. Duration strings use Go syntax, so use `72h` instead
 of `3d`. The default remains three days. The deprecated `retention` field is
 intended for removal in a future major release.

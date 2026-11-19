@@ -4,10 +4,13 @@ import (
 	"regexp"
 	"testing"
 
+	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
 )
 
 func TestAccNamespaceResource(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -15,13 +18,13 @@ func TestAccNamespaceResource(t *testing.T) {
 			{
 				Config: providerConfig + `
 resource "temporal_namespace" "test" {
-	name        = "test"
+	name        = "` + nsName + `"
 	description = "This is a test namespace"
 	owner_email = "test@example.org"
 }
 `,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", nsName),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "description", "This is a test namespace"),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", "test@example.org"),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "is_global_namespace", "false"),
@@ -31,20 +34,20 @@ resource "temporal_namespace" "test" {
 			{
 				ResourceName:      "temporal_namespace.test",
 				ImportState:       true,
-				ImportStateId:     "test",
+				ImportStateId:     nsName,
 				ImportStateVerify: false,
 			},
 			// Update and Read testing
 			{
 				Config: providerConfig + `
 			resource "temporal_namespace" "test" {
-				name        = "test"
+				name        = "` + nsName + `"
 				description = "This is a test namespace"
 				owner_email = "updated@example.org"
 			}
 			`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", nsName),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", "updated@example.org"),
 				),
 			},
@@ -53,6 +56,8 @@ resource "temporal_namespace" "test" {
 }
 
 func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -60,12 +65,12 @@ func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", nsName),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "owner_email", ""),
 				),
 			},
@@ -73,7 +78,7 @@ func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 				}
@@ -84,7 +89,7 @@ func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 				}
 				`,
@@ -95,6 +100,8 @@ func TestAccNamespaceWithoutOwnerEmail(t *testing.T) {
 }
 
 func TestAccNamespaceAlreadyExsits(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -102,7 +109,7 @@ func TestAccNamespaceAlreadyExsits(t *testing.T) {
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test1" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 				}`,
@@ -110,8 +117,14 @@ func TestAccNamespaceAlreadyExsits(t *testing.T) {
 			// Namespace already exists Error
 			{
 				Config: providerConfig + `
+				resource "temporal_namespace" "test1" {
+					name        = "` + nsName + `"
+					description = "This is a test namespace"
+					owner_email = "test@example.org"
+				}
+
 				resource "temporal_namespace" "test2" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 				}
@@ -123,6 +136,8 @@ func TestAccNamespaceAlreadyExsits(t *testing.T) {
 }
 
 func TestAccNamespaceSetReplicationConfig(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -130,14 +145,14 @@ func TestAccNamespaceSetReplicationConfig(t *testing.T) {
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 					active_cluster_name = "active"
 				}
 				`,
 				Check: resource.ComposeAggregateTestCheckFunc(
-					resource.TestCheckResourceAttr("temporal_namespace.test", "name", "test"),
+					resource.TestCheckResourceAttr("temporal_namespace.test", "name", nsName),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "active_cluster_name", "active"),
 					resource.TestCheckResourceAttr("temporal_namespace.test", "clusters.0", "active"),
 				),
@@ -147,6 +162,8 @@ func TestAccNamespaceSetReplicationConfig(t *testing.T) {
 }
 
 func TestAccNamespaceSetReplicationWithChangeBothActiveClusterNameAndClusters(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -154,7 +171,7 @@ func TestAccNamespaceSetReplicationWithChangeBothActiveClusterNameAndClusters(t 
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 					active_cluster_name = "active"
@@ -165,7 +182,7 @@ func TestAccNamespaceSetReplicationWithChangeBothActiveClusterNameAndClusters(t 
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 					active_cluster_name = "standby"
@@ -179,6 +196,8 @@ func TestAccNamespaceSetReplicationWithChangeBothActiveClusterNameAndClusters(t 
 }
 
 func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
+
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
 		Steps: []resource.TestStep{
@@ -186,7 +205,7 @@ func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testi
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 					active_cluster_name = "active"
@@ -197,7 +216,7 @@ func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testi
 			{
 				Config: providerConfig + `
 				resource "temporal_namespace" "test" {
-					name        = "test"
+					name        = "` + nsName + `"
 					description = "This is a test namespace"
 					owner_email = "test@example.org"
 					active_cluster_name = "standby"

@@ -9,12 +9,13 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
-	"github.com/hashicorp/terraform-plugin-framework/resource/schema/int64planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/listplanmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/stringdefault"
@@ -111,13 +112,13 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			"retention": schema.Int64Attribute{
 				MarkdownDescription: "Workflow Execution retention in whole days (deprecated; use retention_period).",
 				Optional:            true, Computed: true,
-				PlanModifiers:      []planmodifier.Int64{int64planmodifier.UseStateForUnknown()},
+				Validators:         []validator.Int64{int64validator.ConflictsWith(path.MatchRoot("retention_period"))},
 				DeprecationMessage: "Use retention_period for duration precision.",
 			},
 			"retention_period": schema.StringAttribute{
 				MarkdownDescription: retentionDescription,
 				Optional:            true, Computed: true,
-				Validators:    []validator.String{retentionValidator{}},
+				Validators:    []validator.String{retentionValidator{}, stringvalidator.ConflictsWith(path.MatchRoot("retention"))},
 				PlanModifiers: []planmodifier.String{retentionSemanticEquality{}},
 			},
 			"active_cluster_name": schema.StringAttribute{
@@ -508,9 +509,7 @@ func updateModelFromSpec(ctx context.Context, data *NamespaceResourceModel, ns *
 	data.Description = types.StringValue(ns.NamespaceInfo.GetDescription())
 	data.OwnerEmail = types.StringValue(ns.NamespaceInfo.GetOwnerEmail())
 	actualRetention := ns.GetConfig().GetWorkflowExecutionRetentionTtl().AsDuration()
-	if data.Retention.IsNull() || data.Retention.IsUnknown() {
-		data.Retention = types.Int64Value(int64(actualRetention.Hours() / 24))
-	}
+	data.Retention = types.Int64Value(int64(actualRetention.Hours() / 24))
 	configuredPeriod, err := parseRetention(data.RetentionPeriod.ValueString())
 	if data.RetentionPeriod.IsNull() || data.RetentionPeriod.IsUnknown() || err != nil || configuredPeriod != actualRetention {
 		data.RetentionPeriod = types.StringValue(actualRetention.String())
@@ -561,4 +560,29 @@ func namespaceRetention(days types.Int64, period types.String) (time.Duration, e
 		return 0, fmt.Errorf("retention days out of range")
 	}
 	return time.Duration(days.ValueInt64()) * day, nil
+}
+
+var _ resource.ResourceWithModifyPlan = &NamespaceResource{}
+
+// Attribute semantic equality can remove a spelling-only period change after
+// the framework marks computed retention unknown. Restore it only when the
+// planned period is unchanged; real period changes must recompute whole days.
+func (r *NamespaceResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
+		return
+	}
+	var configuredDays types.Int64
+	var priorDays types.Int64
+	var priorPeriod, plannedPeriod types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("retention"), &configuredDays)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("retention"), &priorDays)...)
+	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("retention_period"), &priorPeriod)...)
+	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("retention_period"), &plannedPeriod)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	if configuredDays.IsNull() && !priorDays.IsNull() && !priorDays.IsUnknown() &&
+		!plannedPeriod.IsNull() && !plannedPeriod.IsUnknown() && plannedPeriod.Equal(priorPeriod) {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("retention"), priorDays)...)
+	}
 }

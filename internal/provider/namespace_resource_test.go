@@ -245,7 +245,6 @@ func TestAccNamespaceSubdayRetention(t *testing.T) {
 resource "temporal_namespace" "subday" {
   name = "provider-test-subday"
   owner_email = "test@example.org"
-  retention = 3
   retention_period = ` + retention + `
 }
 `
@@ -256,8 +255,8 @@ resource "temporal_namespace" "subday" {
 			{Config: config(`"72h"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
 			{Config: config(`"72h"`), PlanOnly: true},
 			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
-			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, // Import cannot recover the ignored legacy configuration or duration spelling.
-				ImportStateVerifyIgnore: []string{"retention", "retention_period"},
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, // Import returns canonical duration spelling.
+				ImportStateVerifyIgnore: []string{"retention_period"},
 				ImportStateCheck: func(states []*terraform.InstanceState) error {
 					if len(states) != 1 {
 						return fmt.Errorf("expected one imported namespace, got %d", len(states))
@@ -315,6 +314,43 @@ resource "temporal_namespace" "imported" {
 		Steps: []resource.TestStep{
 			{Config: config, ResourceName: "temporal_namespace.imported", ImportState: true, ImportStateId: name, ImportStatePersist: true},
 			{Config: config, PlanOnly: true},
+		},
+	})
+}
+
+func TestAccNamespaceRetentionConflict(t *testing.T) {
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{{
+			Config: providerConfig + `
+resource "temporal_namespace" "conflict" {
+  name = "provider-test-retention-conflict"
+  owner_email = "test@example.org"
+  retention = 3
+  retention_period = "1h"
+}
+`,
+			ExpectError: regexp.MustCompile("Invalid Attribute Combination"),
+		}},
+	})
+}
+
+func TestAccNamespaceLegacyRetentionUpdates(t *testing.T) {
+	config := func(days int) string {
+		return providerConfig + fmt.Sprintf(`
+resource "temporal_namespace" "legacy" {
+  name = "provider-test-retention-legacy"
+  owner_email = "test@example.org"
+  retention = %d
+}
+`, days)
+	}
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{Config: config(3), Check: resource.TestCheckResourceAttr("temporal_namespace.legacy", "retention_period", "72h0m0s")},
+			{Config: config(2), Check: resource.TestCheckResourceAttr("temporal_namespace.legacy", "retention_period", "48h0m0s")},
+			{Config: config(2), PlanOnly: true},
 		},
 	})
 }

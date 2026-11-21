@@ -54,5 +54,7 @@ resource "temporal_namespace" "example" {
 Existing configuration, state, and numeric data source outputs for `retention`
 continue to work. Configure either `retention` or `retention_period`; setting both is rejected. Temporal enforces a minimum of one hour for local namespaces and one
 day for global namespaces. Duration strings use Go syntax, so use `72h` instead
-of `3d`. The default remains three days. The deprecated `retention` field is
+of `3d`. When neither attribute is configured, the plan explicitly defaults to three
+days (`retention = 3`, `retention_period = "72h0m0s"`). Removing either
+configured attribute therefore plans a return to three days. The deprecated `retention` field is
 intended for removal in a future major release.

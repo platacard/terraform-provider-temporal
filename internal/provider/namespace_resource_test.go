@@ -15,7 +15,10 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-testing/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-testing/helper/resource"
+	"github.com/hashicorp/terraform-plugin-testing/knownvalue"
+	"github.com/hashicorp/terraform-plugin-testing/plancheck"
 	"github.com/hashicorp/terraform-plugin-testing/terraform"
+	"github.com/hashicorp/terraform-plugin-testing/tfjsonpath"
 )
 
 func TestAccNamespaceResource(t *testing.T) {
@@ -353,4 +356,39 @@ resource "temporal_namespace" "legacy" {
 			{Config: config(2), PlanOnly: true},
 		},
 	})
+}
+
+func TestAccNamespaceRetentionDefaultOnRemoval(t *testing.T) {
+	for _, attribute := range []string{"retention = 7", "retention_period = \"168h\""} {
+		t.Run(attribute, func(t *testing.T) {
+			config := func(retention, description string) string {
+				return providerConfig + fmt.Sprintf(`
+resource "temporal_namespace" "defaulting" {
+  name = "provider-test-defaulting"
+  owner_email = "test@example.org"
+  description = %q
+  %s
+}
+`, description, retention)
+			}
+			plannedDefault := resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
+				plancheck.ExpectKnownValue("temporal_namespace.defaulting", tfjsonpath.New("retention"), knownvalue.Int64Exact(3)),
+				plancheck.ExpectKnownValue("temporal_namespace.defaulting", tfjsonpath.New("retention_period"), knownvalue.StringExact("72h0m0s")),
+			}}
+			stateDefault := resource.ComposeAggregateTestCheckFunc(
+				resource.TestCheckResourceAttr("temporal_namespace.defaulting", "retention", "3"),
+				resource.TestCheckResourceAttr("temporal_namespace.defaulting", "retention_period", "72h0m0s"),
+			)
+			resource.Test(t, resource.TestCase{
+				ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+				Steps: []resource.TestStep{
+					{Config: config(attribute, "original"), Check: resource.TestCheckResourceAttr("temporal_namespace.defaulting", "retention", "7")},
+					{Config: config("", "original"), PlanOnly: true, ExpectNonEmptyPlan: true},
+					{Config: config("", "original"), ConfigPlanChecks: plannedDefault, Check: stateDefault},
+					{Config: config("", "changed"), ConfigPlanChecks: plannedDefault, Check: stateDefault},
+					{Config: config("", "changed"), PlanOnly: true},
+				},
+			})
+		})
+	}
 }

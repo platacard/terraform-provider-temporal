@@ -9,7 +9,6 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 
-	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
@@ -112,7 +111,6 @@ func (r *NamespaceResource) Schema(ctx context.Context, req resource.SchemaReque
 			"retention": schema.Int64Attribute{
 				MarkdownDescription: "Workflow Execution retention in whole days (deprecated; use retention_period).",
 				Optional:            true, Computed: true,
-				Validators:         []validator.Int64{int64validator.ConflictsWith(path.MatchRoot("retention_period"))},
 				DeprecationMessage: "Use retention_period for duration precision.",
 			},
 			"retention_period": schema.StringAttribute{
@@ -568,13 +566,28 @@ var _ resource.ResourceWithModifyPlan = &NamespaceResource{}
 // the framework marks computed retention unknown. Restore it only when the
 // planned period is unchanged; real period changes must recompute whole days.
 func (r *NamespaceResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
-	if req.Plan.Raw.IsNull() || req.State.Raw.IsNull() {
+	if req.Plan.Raw.IsNull() {
 		return
 	}
 	var configuredDays types.Int64
 	var priorDays types.Int64
 	var priorPeriod, plannedPeriod types.String
 	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("retention"), &configuredDays)...)
+	var configuredPeriod types.String
+	resp.Diagnostics.Append(req.Config.GetAttribute(ctx, path.Root("retention_period"), &configuredPeriod)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	// Null means omitted; unknown expressions must wait for their inputs.
+	if configuredDays.IsNull() && configuredPeriod.IsNull() {
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("retention"), types.Int64Value(3))...)
+		resp.Diagnostics.Append(resp.Plan.SetAttribute(ctx, path.Root("retention_period"), types.StringValue("72h0m0s"))...)
+		return
+	}
+	if req.State.Raw.IsNull() {
+		return
+	}
+
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("retention"), &priorDays)...)
 	resp.Diagnostics.Append(req.State.GetAttribute(ctx, path.Root("retention_period"), &priorPeriod)...)
 	resp.Diagnostics.Append(req.Plan.GetAttribute(ctx, path.Root("retention_period"), &plannedPeriod)...)

@@ -350,6 +350,7 @@ func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Reso
 		NewNamespaceResource,
 		NewSearchAttributeResource,
 		NewScheduleResource,
+		NewTaskQueueConfigResource,
 	}
 }
 

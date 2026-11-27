@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	commonv1 "go.temporal.io/api/common/v1"
 	schedulev1 "go.temporal.io/api/schedule/v1"
@@ -101,4 +103,13 @@ func formatSingleRange(builder *strings.Builder, r *schedulev1.Range) {
 		builder.WriteByte('/')
 		builder.WriteString(strconv.Itoa(int(r.Step)))
 	}
+}
+
+func payloadText(payload *commonv1.Payload) (text string, binary bool) {
+	raw := payload.GetData()
+	if utf8.Valid(raw) {
+		return string(raw), false
+	}
+
+	return base64.StdEncoding.EncodeToString(raw), true
 }

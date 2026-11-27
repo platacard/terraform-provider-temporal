@@ -101,7 +101,7 @@ Required:
 Optional:
 
 - `execution_timeout` (String) Execution timeout
-- `input` (String) Workflow input (JSON)
+- `input` (String) Workflow input (JSON), passed to the workflow as a single argument. When a schedule is read, input that is not text is base64-encoded, and only the first argument is read if the schedule has several
 - `run_timeout` (String) Run timeout
 - `task_timeout` (String) Task timeout
 

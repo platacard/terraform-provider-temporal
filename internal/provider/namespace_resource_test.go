@@ -243,10 +243,11 @@ func TestAccNamespaceSetReplicationWithChangeActiveClusterNotInClusters(t *testi
 }
 
 func TestAccNamespaceSubdayRetention(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
 	config := func(retention string) string {
 		return providerConfig + `
 resource "temporal_namespace" "subday" {
-  name = "provider-test-subday"
+  name = "` + nsName + `"
   owner_email = "test@example.org"
   retention_period = ` + retention + `
 }
@@ -258,7 +259,7 @@ resource "temporal_namespace" "subday" {
 			{Config: config(`"72h"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention", "3")},
 			{Config: config(`"72h"`), PlanOnly: true},
 			{Config: config(`"1h1s"`), Check: resource.TestCheckResourceAttr("temporal_namespace.subday", "retention_period", "1h1s")},
-			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: "provider-test-subday", ImportStateVerify: true, // Import returns canonical duration spelling.
+			{ResourceName: "temporal_namespace.subday", ImportState: true, ImportStateId: nsName, ImportStateVerify: true, // Import returns canonical duration spelling.
 				ImportStateVerifyIgnore: []string{"retention_period"},
 				ImportStateCheck: func(states []*terraform.InstanceState) error {
 					if len(states) != 1 {
@@ -294,7 +295,7 @@ func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
 		}
 	}()
 	ctx := context.Background()
-	const name = "provider-test-retention-import"
+	name := acctest.RandomWithPrefix("tf-acc-test")
 	_, err = workflowservice.NewWorkflowServiceClient(conn).RegisterNamespace(ctx, &workflowservice.RegisterNamespaceRequest{
 		Namespace: name, OwnerEmail: "test@example.org",
 		WorkflowExecutionRetentionPeriod: durationpb.New(time.Hour + time.Second),
@@ -305,9 +306,9 @@ func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
 	defer func() {
 		_, _ = operatorservice.NewOperatorServiceClient(conn).DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{Namespace: name})
 	}()
-	const config = providerConfig + `
+	config := providerConfig + `
 resource "temporal_namespace" "imported" {
-  name = "provider-test-retention-import"
+  name = "` + name + `"
   owner_email = "test@example.org"
   retention_period = "1h1s"
 }
@@ -339,14 +340,15 @@ resource "temporal_namespace" "conflict" {
 }
 
 func TestAccNamespaceLegacyRetentionUpdates(t *testing.T) {
+	nsName := acctest.RandomWithPrefix("tf-acc-test")
 	config := func(days int) string {
 		return providerConfig + fmt.Sprintf(`
 resource "temporal_namespace" "legacy" {
-  name = "provider-test-retention-legacy"
+  name = %q
   owner_email = "test@example.org"
   retention = %d
 }
-`, days)
+`, nsName, days)
 	}
 	resource.Test(t, resource.TestCase{
 		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
@@ -361,15 +363,16 @@ resource "temporal_namespace" "legacy" {
 func TestAccNamespaceRetentionDefaultOnRemoval(t *testing.T) {
 	for _, attribute := range []string{"retention = 7", "retention_period = \"168h\""} {
 		t.Run(attribute, func(t *testing.T) {
+			nsName := acctest.RandomWithPrefix("tf-acc-test")
 			config := func(retention, description string) string {
 				return providerConfig + fmt.Sprintf(`
 resource "temporal_namespace" "defaulting" {
-  name = "provider-test-defaulting"
+  name = %q
   owner_email = "test@example.org"
   description = %q
   %s
 }
-`, description, retention)
+`, nsName, description, retention)
 			}
 			plannedDefault := resource.ConfigPlanChecks{PreApply: []plancheck.PlanCheck{
 				plancheck.ExpectKnownValue("temporal_namespace.defaulting", tfjsonpath.New("retention"), knownvalue.Int64Exact(3)),

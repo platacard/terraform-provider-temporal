@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	schedulev1 "go.temporal.io/api/schedule/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -51,6 +52,28 @@ func TestFormatDurationCanonical_SubSecond(t *testing.T) {
 		}
 		if parsed, err := time.ParseDuration(got); err != nil || parsed != duration {
 			t.Errorf("%s: %q does not parse back to the same duration (%s, %v)", duration, got, parsed, err)
+		}
+	}
+}
+
+func TestFormatRanges(t *testing.T) {
+	cases := []struct {
+		name   string
+		ranges []*schedulev1.Range
+		want   string
+	}{
+		{"no ranges", nil, ""},
+		{"single value", []*schedulev1.Range{{Start: 5}}, "5"},
+		{"single value with end equal to start", []*schedulev1.Range{{Start: 5, End: 5, Step: 1}}, "5"},
+		{"range", []*schedulev1.Range{{Start: 1, End: 5, Step: 1}}, "1-5"},
+		{"range with a step", []*schedulev1.Range{{Start: 0, End: 59, Step: 15}}, "0-59/15"},
+		{"step without an end matches only the start", []*schedulev1.Range{{Start: 5, Step: 2}}, "5"},
+		{"step with an end before the start", []*schedulev1.Range{{Start: 5, End: 3, Step: 2}}, "5"},
+		{"several ranges", []*schedulev1.Range{{Start: 1}, {Start: 3, End: 9, Step: 3}}, "1,3-9/3"},
+	}
+	for _, c := range cases {
+		if got := formatRanges(c.ranges); got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
 	}
 }

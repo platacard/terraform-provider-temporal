@@ -89,11 +89,12 @@ func formatSingleRange(builder *strings.Builder, r *schedulev1.Range) {
 	// Write start value
 	builder.WriteString(strconv.Itoa(int(r.Start)))
 
-	// Add end if it's a range (not a single value)
-	if r.End > r.Start {
-		builder.WriteByte('-')
-		builder.WriteString(strconv.Itoa(int(r.End)))
+	if r.End <= r.Start {
+		return
 	}
+
+	builder.WriteByte('-')
+	builder.WriteString(strconv.Itoa(int(r.End)))
 
 	// Add step if it's not the default
 	if r.Step > 1 {

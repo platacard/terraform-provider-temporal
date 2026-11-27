@@ -358,6 +358,7 @@ func (p *TemporalProvider) DataSources(ctx context.Context) []func() datasource.
 	return []func() datasource.DataSource{
 		NewNamespaceDataSource,
 		NewSearchAttributeDataSource,
+		NewScheduleDataSource,
 	}
 }
 

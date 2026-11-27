@@ -304,7 +304,9 @@ func TestAccNamespaceRetentionImportedPlan(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		_, _ = operatorservice.NewOperatorServiceClient(conn).DeleteNamespace(ctx, &operatorservice.DeleteNamespaceRequest{Namespace: name})
+		cleanupCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		_, _ = operatorservice.NewOperatorServiceClient(conn).DeleteNamespace(cleanupCtx, &operatorservice.DeleteNamespaceRequest{Namespace: name})
 	}()
 	config := providerConfig + `
 resource "temporal_namespace" "imported" {

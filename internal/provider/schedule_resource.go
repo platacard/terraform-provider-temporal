@@ -982,7 +982,7 @@ func convertScheduleAction(action *schedulev1.ScheduleAction) (*ScheduleActionMo
 	if workflowAction != nil {
 		tfWorkflow := &WorkflowActionModel{
 			WorkflowID: types.StringValue(workflowAction.WorkflowId),
-			TaskQueue:  types.StringValue(workflowAction.TaskQueue.Name),
+			TaskQueue:  types.StringValue(workflowAction.GetTaskQueue().GetName()),
 			Input:      types.StringNull(),
 		}
 

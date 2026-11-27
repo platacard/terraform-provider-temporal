@@ -78,6 +78,26 @@ func TestConvertFromTemporalSchedule_NilSpecAndAction(t *testing.T) {
 	}
 }
 
+func TestConvertScheduleAction_NilTaskQueue(t *testing.T) {
+	action := &schedulev1.ScheduleAction{Action: &schedulev1.ScheduleAction_StartWorkflow{
+		StartWorkflow: &workflowv1.NewWorkflowExecutionInfo{WorkflowId: "wf"},
+	}}
+
+	model, diags := convertScheduleAction(action)
+	if len(diags) != 0 {
+		t.Fatalf("unexpected diagnostics: %v", diags)
+	}
+	if model == nil || model.Workflow == nil {
+		t.Fatal("expected a workflow action")
+	}
+	if got := model.Workflow.TaskQueue.ValueString(); got != "" {
+		t.Errorf("expected an empty task queue, got %q", got)
+	}
+	if !model.Workflow.Input.IsNull() {
+		t.Errorf("expected a null input, got %s", model.Workflow.Input)
+	}
+}
+
 func TestConvertScheduleAction_Input(t *testing.T) {
 	newAction := func(payloads ...*commonv1.Payload) *schedulev1.ScheduleAction {
 		return &schedulev1.ScheduleAction{Action: &schedulev1.ScheduleAction_StartWorkflow{

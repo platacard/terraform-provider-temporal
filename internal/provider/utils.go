@@ -30,9 +30,8 @@ func formatDurationCanonical(d *durationpb.Duration) string {
 		return "1m"
 	default:
 		// For other values, check if it's a clean division
-		if totalSeconds%(24*3600) == 0 {
-			// Clean days
-			return fmt.Sprintf("%dd", totalSeconds/(24*3600))
+		if totalSeconds == 0 {
+			return "0s"
 		} else if totalSeconds%3600 == 0 {
 			// Clean hours
 			return fmt.Sprintf("%dh", totalSeconds/3600)

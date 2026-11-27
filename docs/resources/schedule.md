@@ -150,7 +150,7 @@ Optional:
 
 Required:
 
-- `every` (String) Duration of the interval (e.g., '24h', '7d')
+- `every` (String) Duration of the interval (e.g., '24h', '168h')
 
 Optional:
 

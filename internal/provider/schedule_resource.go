@@ -298,7 +298,7 @@ func (r *ScheduleResource) Schema(ctx context.Context, req resource.SchemaReques
 								Required:            true,
 							},
 							"input": schema.StringAttribute{
-								MarkdownDescription: "Workflow input (JSON)",
+								MarkdownDescription: "Workflow input (JSON), passed to the workflow as a single argument. When a schedule is read, input that is not text is base64-encoded, and only the first argument is read if the schedule has several",
 								Optional:            true,
 							},
 							"execution_timeout": schema.StringAttribute{
@@ -528,7 +528,8 @@ func (r *ScheduleResource) Read(ctx context.Context, req resource.ReadRequest, r
 		}
 
 		if describeResp.Schedule.Action != nil {
-			data.Action = convertScheduleAction(describeResp.Schedule.Action)
+			data.Action, diags = convertScheduleAction(describeResp.Schedule.Action)
+			resp.Diagnostics.Append(diags...)
 		}
 
 		data.State = &ScheduleStateModel{
@@ -895,7 +896,7 @@ func ConvertFromTemporalSchedule(scheduleID string, namespace string, schedule *
 	}
 
 	if schedule.Action != nil {
-		model.Action = convertScheduleAction(schedule.Action)
+		model.Action, _ = convertScheduleAction(schedule.Action)
 	}
 
 	return model, nil
@@ -969,9 +970,11 @@ func convertScheduleSpec(spec *schedulev1.ScheduleSpec) *ScheduleSpecModel {
 }
 
 // convertScheduleAction converts Temporal ScheduleAction to Terraform model.
-func convertScheduleAction(action *schedulev1.ScheduleAction) *ScheduleActionModel {
+func convertScheduleAction(action *schedulev1.ScheduleAction) (*ScheduleActionModel, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	if action == nil {
-		return nil
+		return nil, diags
 	}
 
 	tfAction := &ScheduleActionModel{}
@@ -980,16 +983,29 @@ func convertScheduleAction(action *schedulev1.ScheduleAction) *ScheduleActionMod
 		tfWorkflow := &WorkflowActionModel{
 			WorkflowID: types.StringValue(workflowAction.WorkflowId),
 			TaskQueue:  types.StringValue(workflowAction.TaskQueue.Name),
+			Input:      types.StringNull(),
 		}
 
 		if workflowAction.WorkflowType != nil {
 			tfWorkflow.WorkflowType = types.StringValue(workflowAction.WorkflowType.Name)
 		}
 
-		if workflowAction.Input != nil && len(workflowAction.Input.Payloads) > 0 {
-			tfWorkflow.Input = types.StringValue(string(workflowAction.Input.Payloads[0].Data))
-		} else {
-			tfWorkflow.Input = types.StringNull()
+		if payloads := workflowAction.GetInput().GetPayloads(); len(payloads) > 0 {
+			input, binary := payloadText(payloads[0])
+			tfWorkflow.Input = types.StringValue(input)
+
+			if binary {
+				diags.AddWarning(
+					"Binary Workflow Input",
+					fmt.Sprintf("The input of workflow %s is not text (it may be encrypted by a payload codec or encoded as protobuf). action.workflow.input holds it base64-encoded.", workflowAction.WorkflowId),
+				)
+			}
+			if len(payloads) > 1 {
+				diags.AddWarning(
+					"Multiple Workflow Arguments",
+					fmt.Sprintf("The schedule starts workflow %s with %d arguments. action.workflow.input holds only the first one. Updating the schedule with this provider replaces all arguments with that single input.", workflowAction.WorkflowId, len(payloads)),
+				)
+			}
 		}
 
 		if workflowAction.WorkflowExecutionTimeout != nil {
@@ -1005,7 +1021,7 @@ func convertScheduleAction(action *schedulev1.ScheduleAction) *ScheduleActionMod
 		tfAction.Workflow = tfWorkflow
 	}
 
-	return tfAction
+	return tfAction, diags
 }
 
 func convertMemo(ctx context.Context, memo *commonv1.Memo) (types.Map, diag.Diagnostics) {

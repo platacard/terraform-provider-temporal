@@ -4,7 +4,10 @@ import (
 	"testing"
 	"time"
 
+	commonv1 "go.temporal.io/api/common/v1"
 	schedulev1 "go.temporal.io/api/schedule/v1"
+	taskqueuev1 "go.temporal.io/api/taskqueue/v1"
+	workflowv1 "go.temporal.io/api/workflow/v1"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -72,5 +75,46 @@ func TestConvertFromTemporalSchedule_NilSpecAndAction(t *testing.T) {
 	}
 	if model.Action != nil {
 		t.Error("expected Action to be nil when Schedule.Action is nil")
+	}
+}
+
+func TestConvertScheduleAction_Input(t *testing.T) {
+	newAction := func(payloads ...*commonv1.Payload) *schedulev1.ScheduleAction {
+		return &schedulev1.ScheduleAction{Action: &schedulev1.ScheduleAction_StartWorkflow{
+			StartWorkflow: &workflowv1.NewWorkflowExecutionInfo{
+				WorkflowId: "wf",
+				TaskQueue:  &taskqueuev1.TaskQueue{Name: "queue"},
+				Input:      &commonv1.Payloads{Payloads: payloads},
+			},
+		}}
+	}
+
+	cases := []struct {
+		name     string
+		action   *schedulev1.ScheduleAction
+		want     string
+		warnings int
+	}{
+		{"one JSON argument", newAction(&commonv1.Payload{Data: []byte(`{"key":"value"}`)}), `{"key":"value"}`, 0},
+		{"several arguments", newAction(&commonv1.Payload{Data: []byte(`"acct-1"`)}, &commonv1.Payload{Data: []byte(`42`)}), `"acct-1"`, 1},
+		{"binary argument", newAction(&commonv1.Payload{Data: []byte{0xff, 0xfe}}), "//4=", 1},
+		{"several arguments, the first one binary", newAction(&commonv1.Payload{Data: []byte{0xff, 0xfe}}, &commonv1.Payload{Data: []byte(`42`)}), "//4=", 2},
+	}
+	for _, c := range cases {
+		model, diags := convertScheduleAction(c.action)
+		if diags.HasError() {
+			t.Errorf("%s: unexpected error: %v", c.name, diags)
+		}
+		if diags.WarningsCount() != c.warnings {
+			t.Errorf("%s: got %d warnings, want %d: %v", c.name, diags.WarningsCount(), c.warnings, diags)
+		}
+		if got := model.Workflow.Input.ValueString(); got != c.want {
+			t.Errorf("%s: got input %q, want %q", c.name, got, c.want)
+		}
+	}
+
+	model, diags := convertScheduleAction(newAction())
+	if len(diags) != 0 || !model.Workflow.Input.IsNull() {
+		t.Errorf("no arguments: got input %s with diagnostics %v, want null", model.Workflow.Input, diags)
 	}
 }

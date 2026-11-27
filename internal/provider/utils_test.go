@@ -36,3 +36,21 @@ func TestFormatDurationCanonical(t *testing.T) {
 		}
 	}
 }
+
+func TestFormatDurationCanonical_SubSecond(t *testing.T) {
+	cases := map[time.Duration]string{
+		500 * time.Millisecond:              "500ms",
+		1500 * time.Millisecond:             "1.5s",
+		90*time.Second + time.Millisecond/2: "1m30.0005s",
+		time.Nanosecond:                     "1ns",
+	}
+	for duration, want := range cases {
+		got := formatDurationCanonical(durationpb.New(duration))
+		if got != want {
+			t.Errorf("%s: got %q, want %q", duration, got, want)
+		}
+		if parsed, err := time.ParseDuration(got); err != nil || parsed != duration {
+			t.Errorf("%s: %q does not parse back to the same duration (%s, %v)", duration, got, parsed, err)
+		}
+	}
+}

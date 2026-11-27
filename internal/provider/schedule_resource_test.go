@@ -296,3 +296,49 @@ resource "temporal_schedule" "test" {
 		},
 	})
 }
+
+func TestAccScheduleResource_SubSecondDurations(t *testing.T) {
+	scheduleName := acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	config := providerConfig + fmt.Sprintf(`
+resource "temporal_schedule" "test" {
+  namespace   = "default"
+  schedule_id = "%s"
+
+  spec = {
+    intervals = [{
+      every = "1h"
+    }]
+    jitter = "500ms"
+  }
+
+  state = {}
+
+  policy_config = {}
+
+  action = {
+    workflow = {
+      workflow_id   = "test-workflow-subsecond"
+      workflow_type = "TestWorkflow"
+      task_queue    = "test-queue"
+      task_timeout  = "1.5s"
+    }
+  }
+}
+`, scheduleName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+			},
+			{
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_schedule.test", "spec.jitter", "500ms"),
+					resource.TestCheckResourceAttr("temporal_schedule.test", "action.workflow.task_timeout", "1.5s"),
+				),
+			},
+		},
+	})
+}

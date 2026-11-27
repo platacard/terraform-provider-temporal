@@ -16,6 +16,10 @@ func formatDurationCanonical(d *durationpb.Duration) string {
 		return ""
 	}
 
+	if d.GetNanos() != 0 {
+		return d.AsDuration().String()
+	}
+
 	totalSeconds := d.GetSeconds()
 
 	// For common intervals, use human-readable format

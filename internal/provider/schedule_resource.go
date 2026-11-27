@@ -185,7 +185,7 @@ func (r *ScheduleResource) Schema(ctx context.Context, req resource.SchemaReques
 						NestedObject: schema.NestedAttributeObject{
 							Attributes: map[string]schema.Attribute{
 								"every": schema.StringAttribute{
-									MarkdownDescription: "Duration of the interval (e.g., '24h', '7d')",
+									MarkdownDescription: "Duration of the interval (e.g., '24h', '168h')",
 									Required:            true,
 								},
 								"offset": schema.StringAttribute{

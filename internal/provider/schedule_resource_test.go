@@ -246,3 +246,53 @@ resource "temporal_schedule" "bad" {
 		},
 	})
 }
+
+func TestAccScheduleResource_WholeDayDurations(t *testing.T) {
+	scheduleName := acctest.RandStringFromCharSet(10, acctest.CharSetAlphaNum)
+	config := providerConfig + fmt.Sprintf(`
+resource "temporal_schedule" "test" {
+  namespace   = "default"
+  schedule_id = "%s"
+
+  spec = {
+    intervals = [{
+      every  = "168h"
+      offset = "48h"
+    }]
+  }
+
+  state = {}
+
+  policy_config = {
+    catchup_window = "72h"
+  }
+
+  action = {
+    workflow = {
+      workflow_id       = "test-workflow-days"
+      workflow_type     = "TestWorkflow"
+      task_queue        = "test-queue"
+      execution_timeout = "48h"
+    }
+  }
+}
+`, scheduleName)
+
+	resource.Test(t, resource.TestCase{
+		ProtoV6ProviderFactories: testAccProtoV6ProviderFactories,
+		Steps: []resource.TestStep{
+			{
+				Config: config,
+			},
+			{
+				RefreshState: true,
+				Check: resource.ComposeAggregateTestCheckFunc(
+					resource.TestCheckResourceAttr("temporal_schedule.test", "spec.intervals.0.every", "168h"),
+					resource.TestCheckResourceAttr("temporal_schedule.test", "spec.intervals.0.offset", "48h"),
+					resource.TestCheckResourceAttr("temporal_schedule.test", "policy_config.catchup_window", "72h"),
+					resource.TestCheckResourceAttr("temporal_schedule.test", "action.workflow.execution_timeout", "48h"),
+				),
+			},
+		},
+	})
+}

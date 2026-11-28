@@ -350,6 +350,7 @@ func (p *TemporalProvider) Resources(ctx context.Context) []func() resource.Reso
 		NewNamespaceResource,
 		NewSearchAttributeResource,
 		NewScheduleResource,
+		NewNexusEndpointResource,
 	}
 }
 
@@ -358,6 +359,7 @@ func (p *TemporalProvider) DataSources(ctx context.Context) []func() datasource.
 	return []func() datasource.DataSource{
 		NewNamespaceDataSource,
 		NewSearchAttributeDataSource,
+		NewNexusEndpointDataSource,
 	}
 }
 
